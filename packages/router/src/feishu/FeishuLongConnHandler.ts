@@ -48,6 +48,18 @@ export class FeishuLongConnHandler {
   }
 
   /**
+   * Callback to register streaming message with RouterServer
+   */
+  private onStartStreaming?: (messageId: string, openId: string, feishuMessageId: string | null) => void;
+
+  /**
+   * Set streaming start callback
+   */
+  setOnStartStreaming(callback: (messageId: string, openId: string, feishuMessageId: string | null) => void): void {
+    this.onStartStreaming = callback;
+  }
+
+  /**
    * Handle message event
    */
   private async handleMessageEvent(data: any): Promise<void> {
@@ -64,13 +76,15 @@ export class FeishuLongConnHandler {
       const messageId = message.message_id;
       const content = this.parseMessageContent(message);
 
-      console.log(`Received message from ${openId}: ${content}`);
+      console.log(`[FeishuHandler] Received message from ${openId}: ${content}, msgId=${messageId}`);
 
       // Check if it's a command
       if (this.isCommand(content)) {
         await this.handleCommand(openId, messageId, content);
       } else {
+        console.log(`[FeishuHandler] Handling regular command, msgId=${messageId}`);
         await this.handleRegularCommand(openId, messageId, content);
+        console.log(`[FeishuHandler] Finished handling regular command, msgId=${messageId}`);
       }
     } catch (error) {
       console.error('Error in handleMessageEvent:', error);
@@ -255,20 +269,33 @@ Examples:
         return;
       }
 
+      // Generate message ID first
+      const commandMessageId = uuidv4();
+      console.log(`[FeishuHandler] Creating streaming card for command ${commandMessageId}`);
+
+      // Register streaming session BEFORE sending command to avoid race condition
+      // where stream chunks arrive before registration
+      const feishuMessageId = await this.sendStreamingStart(openId, '🤔 Processing...');
+      console.log(`[FeishuHandler] Created card ${feishuMessageId} for command ${commandMessageId}`);
+      if (this.onStartStreaming) {
+        this.onStartStreaming(commandMessageId, openId, feishuMessageId);
+      }
+
       // Send command to device
       const success = await this.connectionHub.sendToDevice(binding.deviceId, {
         type: MessageType.COMMAND,
-        messageId: uuidv4(),
+        messageId: commandMessageId,
         timestamp: Date.now(),
         content,
         openId
       });
 
       if (!success) {
-        await this.replyToMessage(messageId, '❌ Command sending failed, please try again later');
-      } else {
-        // Acknowledge receipt
-        await this.replyToMessage(messageId, '📤 Command sent to device...');
+        // Send failed - delete the streaming session and notify user
+        if (this.onStartStreaming) {
+          // We need a way to clean up, for now just send error as new message
+          await this.replyToMessage(messageId, '❌ Command sending failed, please try again later');
+        }
       }
     } catch (error) {
       console.error('Error handling regular command:', error);
@@ -318,6 +345,7 @@ Examples:
    * Returns message_id for updating
    */
   async sendStreamingStart(openId: string, initialText: string = '🤔 Thinking...'): Promise<string | null> {
+    console.log(`[FeishuHandler] Creating interactive card for ${openId}`);
     try {
       const result = await this.client.im.message.create({
         params: { receive_id_type: 'open_id' },

@@ -44,6 +44,14 @@ export class RouterServer {
     // Share ConnectionHub with Feishu handler
     this.feishuLongConnHandler.setConnectionHub(this.connectionHub);
 
+    // Register callback for streaming message start
+    this.feishuLongConnHandler.setOnStartStreaming((messageId: string, openId: string, feishuMessageId: string | null) => {
+      console.log(`[RouterServer] Registering streaming session: msgId=${messageId}, feishuMsgId=${feishuMessageId}`);
+      // Register this message as a streaming message so chunks and response update the same card
+      this.streamingMessages.set(messageId, { openId, feishuMessageId, buffer: '' });
+      console.log(`[RouterServer] Total streaming sessions: ${this.streamingMessages.size}`);
+    });
+
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -209,7 +217,7 @@ export class RouterServer {
               const responseOpenId = message.openId || message.data?.openId;
               const responseMessageId = message.messageId;
               if (responseMessageId && responseOpenId) {
-                // Check if this was a streaming message
+                // Check if this was a streaming message (stream chunks were sent)
                 if (this.streamingMessages.has(responseMessageId)) {
                   await this.finalizeStreamingMessage(
                     responseMessageId,
@@ -218,10 +226,12 @@ export class RouterServer {
                     message.error || message.data?.error
                   );
                 } else {
-                  // Non-streaming message, send directly
+                  // No streaming session found - session should have been created when command was sent
+                  // This might happen if there was an error. Just send the result as plain text.
                   const output = message.output || message.data?.output;
                   const success = message.success ?? message.data?.success;
                   const errorMsg = message.error || message.data?.error;
+
                   if (success) {
                     await this.feishuLongConnHandler.sendMessage(
                       responseOpenId,
@@ -309,19 +319,21 @@ export class RouterServer {
    * Handle streaming chunk from device
    */
   private async handleStreamingChunk(messageId: string, openId: string, chunk: string): Promise<void> {
-    let streamData = this.streamingMessages.get(messageId);
+    console.log(`[RouterServer] Received stream chunk for ${messageId}, chunk length: ${chunk.length}`);
+    const streamData = this.streamingMessages.get(messageId);
 
-    // Initialize new streaming session
+    // If no streaming session exists, ignore the chunk
+    // The session should have been created when the command was sent
     if (!streamData) {
-      const feishuMessageId = await this.feishuLongConnHandler.sendStreamingStart(openId, '🤔 Processing...');
-      streamData = { openId, feishuMessageId, buffer: '' };
-      this.streamingMessages.set(messageId, streamData);
+      console.log(`[RouterServer] No streaming session found for ${messageId}, ignoring chunk`);
+      console.log(`[RouterServer] Known sessions: ${Array.from(this.streamingMessages.keys()).join(', ')}`);
+      return;
     }
 
     // Accumulate chunk
     streamData.buffer += chunk;
 
-    // Update message every 500ms or if buffer gets large
+    // Update message every 50 characters
     if (streamData.feishuMessageId && streamData.buffer.length % 50 === 0) {
       await this.feishuLongConnHandler.updateStreamingMessage(
         streamData.feishuMessageId,
