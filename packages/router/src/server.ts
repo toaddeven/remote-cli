@@ -5,13 +5,14 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Server as HttpServer } from 'http';
 import { ConfigManager } from './config/ConfigManager';
 import { JsonStore } from './storage/JsonStore';
-import { FeishuHandler } from './webhook/FeishuHandler';
+import { FeishuLongConnHandler } from './feishu/FeishuLongConnHandler';
 import { ConnectionHub } from './websocket/ConnectionHub';
+import { BindingManager } from './binding/BindingManager';
 import { MessageType } from './types';
 
 /**
  * Router Server
- * Handles Feishu webhooks, WebSocket connections, and message routing
+ * Handles Feishu WebSocket long connection, local WebSocket connections, and message routing
  */
 export class RouterServer {
   private app: Koa;
@@ -19,8 +20,9 @@ export class RouterServer {
   private wss: WebSocketServer | null = null;
   private config: ConfigManager;
   private store: JsonStore;
-  private feishuHandler: FeishuHandler;
+  private feishuLongConnHandler: FeishuLongConnHandler;
   private connectionHub: ConnectionHub;
+  private bindingManager: BindingManager;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(config: ConfigManager, store: JsonStore) {
@@ -28,14 +30,17 @@ export class RouterServer {
     this.store = store;
     this.app = new Koa();
     this.connectionHub = new ConnectionHub();
+    this.bindingManager = new BindingManager(store);
 
-    // Initialize FeishuHandler
-    this.feishuHandler = new FeishuHandler({
+    // Initialize FeishuLongConnHandler (WebSocket mode)
+    this.feishuLongConnHandler = new FeishuLongConnHandler({
       appId: config.get('feishu', 'appId'),
       appSecret: config.get('feishu', 'appSecret'),
-      encryptKey: config.get('feishu', 'encryptKey') || '',
       store: this.store
     });
+
+    // Share ConnectionHub with Feishu handler
+    this.feishuLongConnHandler.setConnectionHub(this.connectionHub);
 
     this.setupMiddleware();
     this.setupRoutes();
@@ -87,14 +92,45 @@ export class RouterServer {
       };
     });
 
-    // Feishu webhook endpoint
-    router.post('/webhook/feishu', async (ctx) => {
-      const event = ctx.request.body;
+    // Binding code request endpoint
+    router.post('/api/bind/request', async (ctx) => {
+      const { deviceId, deviceName, platform } = ctx.request.body as {
+        deviceId: string;
+        deviceName?: string;
+        platform?: string;
+      };
 
-      // Handle webhook
-      const result = await this.feishuHandler.handleWebhook(event);
+      // Validate required fields
+      if (!deviceId) {
+        ctx.status = 400;
+        ctx.body = {
+          success: false,
+          error: 'deviceId is required'
+        };
+        return;
+      }
 
-      ctx.body = result;
+      try {
+        // Generate binding code
+        const bindingCode = await this.bindingManager.generateBindingCode(
+          deviceId,
+          deviceName || 'Unknown Device'
+        );
+
+        ctx.body = {
+          success: true,
+          bindingCode: bindingCode.code,
+          expiresAt: bindingCode.expiresAt,
+          expiresIn: Math.floor((bindingCode.expiresAt - Date.now()) / 1000) // seconds
+        };
+      } catch (error: any) {
+        console.error('Failed to generate binding code:', error);
+        ctx.status = 500;
+        ctx.body = {
+          success: false,
+          error: error.message || 'Failed to generate binding code'
+        };
+      }
     });
 
     this.app.use(router.routes());
@@ -167,16 +203,15 @@ export class RouterServer {
               break;
 
             case MessageType.RESPONSE:
-              // Device sends response to command - forward to Feishu
+              // Device sends response to command - forward to Feishu via long connection
               if (message.data.openId) {
-                const feishuClient = this.feishuHandler['feishuClient'];
                 if (message.data.success) {
-                  await feishuClient.sendTextMessage(
+                  await this.feishuLongConnHandler.sendMessage(
                     message.data.openId,
                     message.data.output || '✅ Command completed successfully'
                   );
                 } else {
-                  await feishuClient.sendTextMessage(
+                  await this.feishuLongConnHandler.sendMessage(
                     message.data.openId,
                     `❌ Command failed:\n${message.data.error || 'Unknown error'}`
                   );
@@ -207,10 +242,6 @@ export class RouterServer {
       });
     });
 
-    // Give FeishuHandler access to ConnectionHub
-    const originalHandler = this.feishuHandler;
-    (originalHandler as any).connectionHub = this.connectionHub;
-
     console.log('WebSocket server listening on /ws');
   }
 
@@ -226,6 +257,14 @@ export class RouterServer {
 
     // Setup WebSocket server
     this.setupWebSocket(this.httpServer);
+
+    // Start Feishu WebSocket long connection
+    try {
+      await this.feishuLongConnHandler.start();
+    } catch (error) {
+      console.error('⚠️  Failed to start Feishu long connection:', error);
+      console.log('   Server will continue without Feishu integration');
+    }
 
     // Start periodic cleanup of stale connections
     const heartbeatInterval = this.config.get('websocket', 'heartbeatInterval');
@@ -253,6 +292,13 @@ export class RouterServer {
       this.cleanupInterval = null;
     }
 
+    // Stop Feishu long connection
+    try {
+      await this.feishuLongConnHandler.stop();
+    } catch (error) {
+      console.error('Error stopping Feishu long connection:', error);
+    }
+
     // Close all WebSocket connections
     this.connectionHub.closeAllConnections();
 
@@ -272,9 +318,6 @@ export class RouterServer {
       });
       this.httpServer = null;
     }
-
-    // Flush data to disk
-    await this.feishuHandler.close();
 
     console.log('✅ Router server stopped');
   }
