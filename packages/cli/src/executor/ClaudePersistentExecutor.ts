@@ -26,11 +26,30 @@ interface ClaudeInputMessage {
 /**
  * Claude stream JSON output message
  */
+/**
+ * Content block in assistant message
+ */
+interface ContentBlock {
+  type: 'text' | 'tool_use' | 'tool_result';
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  content?: string;
+  is_error?: boolean;
+}
+
 interface ClaudeOutputMessage {
   /** Message type */
   type: 'message' | 'thinking' | 'error' | 'usage' | 'system' | 'stream_event' | 'result' | 'assistant' | 'user';
-  /** Message content */
-  content?: string;
+  /** Message content (string or array of content blocks) */
+  content?: string | ContentBlock[];
+  /** Nested message object (for assistant type with full message structure) */
+  message?: {
+    role: string;
+    content?: ContentBlock[];
+    stop_reason?: string | null;
+  };
   /** Whether this is a partial chunk */
   partial?: boolean;
   /** Usage information */
@@ -506,11 +525,13 @@ export class ClaudePersistentExecutor extends EventEmitter {
       switch (message.type) {
         case 'message':
         case 'thinking':
-          console.log(`[ClaudePersistent] Received ${message.type} message, partial=${message.partial}, content length=${message.content?.length || 0}`);
+          const contentLength = typeof message.content === 'string' ? message.content.length : JSON.stringify(message.content).length;
+          console.log(`[ClaudePersistent] Received ${message.type} message, partial=${message.partial}, content length=${contentLength}`);
           if (message.content) {
-            this.currentOutputBuffer.push(message.content);
+            const contentStr = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
+            this.currentOutputBuffer.push(contentStr);
             if (this.currentStreamCallback) {
-              this.currentStreamCallback(message.content);
+              this.currentStreamCallback(contentStr);
             }
 
             // Note: Don't complete on partial=false here
@@ -521,7 +542,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
         case 'error':
           console.error('[ClaudePersistent] Error from Claude:', message.content);
-          this.completeCurrentCommand(false, message.content || 'Unknown error from Claude');
+          this.completeCurrentCommand(false, typeof message.content === 'string' ? message.content : 'Unknown error from Claude');
           break;
 
         case 'usage':
@@ -579,22 +600,56 @@ export class ClaudePersistentExecutor extends EventEmitter {
           console.log(`[ClaudePersistent] Assistant message, partial=${isPartial}`);
           console.log(`[ClaudePersistent] Assistant message FULL: ${JSON.stringify(message)}`);
 
-          // Always stream content if present
-          if (message.content) {
+          // Check for tool_use in the nested message.content array
+          const contentBlocks = message.message?.content || (Array.isArray(message.content) ? message.content : null);
+          if (contentBlocks && contentBlocks.length > 0) {
+            for (const block of contentBlocks) {
+              if (block.type === 'tool_use') {
+                console.log(`[ClaudePersistent] Tool use detected: ${block.name}`);
+                // Send tool use notification to user
+                const toolMsg = `🔧 Tool: ${block.name}\nInput: ${JSON.stringify(block.input, null, 2)}`;
+                if (this.currentStreamCallback) {
+                  this.currentStreamCallback('\n' + toolMsg + '\n');
+                }
+                this.currentOutputBuffer.push(toolMsg);
+
+                // Emit hook for tool execution
+                claudeCodeHooks.notifyToolExecuted(
+                  {
+                    toolName: block.name || 'unknown',
+                    params: block.input || {},
+                    timestamp: Date.now(),
+                    taskId: this.currentTaskId || undefined,
+                  },
+                  {
+                    success: true,
+                    result: 'Tool executed',
+                    duration: 0,
+                  }
+                );
+              } else if (block.type === 'text' && block.text) {
+                // Regular text content
+                this.currentOutputBuffer.push(block.text);
+                if (this.currentStreamCallback) {
+                  this.currentStreamCallback(block.text);
+                }
+              }
+            }
+          }
+
+          // Also handle simple string content (fallback)
+          if (typeof message.content === 'string' && message.content) {
             this.currentOutputBuffer.push(message.content);
             if (this.currentStreamCallback) {
               this.currentStreamCallback(message.content);
             }
-
-            // Start input detection timer after receiving content
             this.startInputDetectionTimer(message.content);
           }
 
-          // If partial=false, this marks the end of the stream
-          // Complete the command even if content is empty (content may be in result message)
-          if (!isPartial) {
-            console.log('[ClaudePersistent] Assistant message complete (partial=false)');
-            // Don't complete here - wait for result message which has the final content
+          // Check if this is the final message (stop_reason indicates completion)
+          const isComplete = message.message?.stop_reason !== null && message.message?.stop_reason !== undefined;
+          if (isComplete) {
+            console.log(`[ClaudePersistent] Assistant message complete, stop_reason=${message.message?.stop_reason}`);
           }
           break;
 
