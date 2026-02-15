@@ -26,7 +26,8 @@ export enum MessageType {
   BINDING_REQUEST = 'binding_request',  // Binding request
   BINDING_CONFIRM = 'binding_confirm',  // Binding confirmation
   HEARTBEAT = 'heartbeat',         // Heartbeat
-  ERROR = 'error'                  // Error
+  ERROR = 'error',                 // Error
+  NOTIFICATION = 'notification'    // Notification message to Feishu
 }
 
 // WebSocket message interface

@@ -257,6 +257,17 @@ export class RouterServer {
               }
               break;
 
+            case MessageType.NOTIFICATION:
+              // Handle notification from device - forward to Feishu
+              if (message.openId && message.title && message.message) {
+                console.log(`[RouterServer] Forwarding notification to ${message.openId}: ${message.title}`);
+                await this.feishuLongConnHandler.sendMessage(
+                  message.openId,
+                  `**${message.title}**\n\n${message.message}`
+                );
+              }
+              break;
+
             default:
               console.log('Unknown message type:', message.type);
           }
