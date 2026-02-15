@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * WebSocket client configuration
@@ -218,9 +219,12 @@ export class WebSocketClient {
   private sendRegistration(): void {
     if (this.ws && this.connected) {
       this.ws.send(JSON.stringify({
-        type: 'register',
-        deviceId: this.deviceId,
-        timestamp: Date.now()
+        type: 'binding_request',
+        messageId: uuidv4(),
+        timestamp: Date.now(),
+        data: {
+          deviceId: this.deviceId
+        }
       }));
     }
   }
