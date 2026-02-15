@@ -94,7 +94,9 @@ npm unlink
 Initialize the CLI and generate a binding code:
 
 ```bash
-remote-cli init --server-url https://your-router-server.com
+remote-cli init --server https://your-router-server.com
+# Or use the short form:
+remote-cli init -s https://your-router-server.com
 ```
 
 This command will:
@@ -548,7 +550,7 @@ ping your-router-server.com
 remote-cli config show
 
 # Re-initialize if needed
-remote-cli init --server-url https://your-router-server.com --force
+remote-cli init --server https://your-router-server.com --force
 ```
 
 **Binding code expired:**
