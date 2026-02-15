@@ -118,7 +118,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
   private directoryGuard: DirectoryGuard;
   private currentWorkingDirectory: string;
   private isDestroyed = false;
-  private defaultTimeout = 300000; // 5 minutes
+  private defaultTimeout = 600000; // 10 minutes default, but will extend on activity
   private sessionId: string | null = null;
   private sessionFilePath: string;
 
@@ -477,11 +477,31 @@ export class ClaudePersistentExecutor extends EventEmitter {
   }
 
   /**
+   * Reset the command timeout timer when activity is detected
+   * This prevents timeout during long-running tasks with continuous output
+   */
+  private resetActivityTimeout(): void {
+    if (!this.isProcessing || !this.currentTimeoutTimer) {
+      return;
+    }
+
+    // Clear existing timer and set a new one
+    clearTimeout(this.currentTimeoutTimer);
+    this.currentTimeoutTimer = setTimeout(() => {
+      console.error('[ClaudePersistent] Command timeout due to inactivity');
+      this.completeCurrentCommand(false, 'Execution timeout: No response from Claude for 10 minutes');
+    }, this.defaultTimeout);
+  }
+
+  /**
    * Handle a line of JSON output from Claude
    */
   private handleOutputLine(line: string): void {
     try {
       const message: ClaudeOutputMessage = JSON.parse(line);
+
+      // Reset timeout on any activity to prevent timeout during long tasks
+      this.resetActivityTimeout();
 
       switch (message.type) {
         case 'message':
