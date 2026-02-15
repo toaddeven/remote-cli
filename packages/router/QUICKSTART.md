@@ -1,0 +1,301 @@
+# Router Server Quick Start Guide
+
+## Installation
+
+After building the router package:
+
+```bash
+cd packages/router
+npm link
+```
+
+Or install globally once published:
+
+```bash
+npm install -g @xiaoyu/remote-cli-router
+```
+
+## Configuration
+
+Run the interactive configuration wizard:
+
+```bash
+remote-cli-router config
+```
+
+You'll be prompted for:
+
+**Required:**
+- Feishu App ID
+- Feishu App Secret
+
+**Optional (with defaults):**
+- Feishu Encrypt Key
+- Feishu Verification Token
+- Server Port (default: 3000)
+- Server Host (default: 0.0.0.0)
+- WebSocket Heartbeat Interval (default: 30000ms)
+
+Configuration is saved to `~/.remote-cli-router/config.json`.
+
+### View Current Configuration
+
+```bash
+remote-cli-router config show
+```
+
+### Reset to Defaults
+
+```bash
+remote-cli-router config reset
+```
+
+## Starting the Server
+
+### Foreground (for testing)
+
+```bash
+remote-cli-router start
+```
+
+Press Ctrl+C to stop.
+
+### Background (recommended for production)
+
+Using PM2:
+
+```bash
+# Install PM2 if not already installed
+npm install -g pm2
+
+# Start the router
+pm2 start remote-cli-router --name router -- start
+
+# View logs
+pm2 logs router
+
+# Stop the router
+pm2 stop router
+
+# Restart the router
+pm2 restart router
+
+# Start on boot
+pm2 startup
+pm2 save
+```
+
+## Architecture
+
+The router server consists of:
+
+1. **HTTP Server (Koa)**
+   - `/health` - Health check endpoint
+   - `/webhook/feishu` - Feishu webhook receiver
+
+2. **WebSocket Server**
+   - `/ws` - WebSocket endpoint for local clients
+   - Handles device registration and message routing
+
+3. **Data Storage (JSON)**
+   - `~/.remote-cli-router/config.json` - Server configuration
+   - `~/.remote-cli-router/bindings.json` - User-device bindings
+
+## Endpoints
+
+### GET /health
+
+Returns server health and connection statistics:
+
+```json
+{
+  "status": "ok",
+  "timestamp": 1234567890,
+  "connections": 3,
+  "devices": ["dev_mac_xxx", "dev_linux_yyy", "dev_win_zzz"]
+}
+```
+
+### POST /webhook/feishu
+
+Receives Feishu event webhooks. Automatically handles:
+- URL verification challenges
+- Message events (`im.message.receive_v1`)
+- Command routing to bound devices
+
+## WebSocket Protocol
+
+Local clients connect to `/ws` and exchange JSON messages:
+
+### Message Types
+
+1. **Binding Request** (Client → Server)
+```json
+{
+  "type": "binding_request",
+  "messageId": "msg_xxx",
+  "timestamp": 1234567890,
+  "data": {
+    "deviceId": "dev_mac_xxx"
+  }
+}
+```
+
+2. **Binding Confirmation** (Server → Client)
+```json
+{
+  "type": "binding_confirm",
+  "messageId": "msg_xxx",
+  "timestamp": 1234567890,
+  "data": {
+    "success": true
+  }
+}
+```
+
+3. **Heartbeat** (Bidirectional)
+```json
+{
+  "type": "heartbeat",
+  "messageId": "msg_xxx",
+  "timestamp": 1234567890,
+  "data": {}
+}
+```
+
+4. **Command** (Server → Client)
+```json
+{
+  "type": "command",
+  "messageId": "msg_xxx",
+  "timestamp": 1234567890,
+  "data": {
+    "openId": "ou_xxx",
+    "content": "Fix TypeScript errors",
+    "workingDir": "~/projects/my-app"
+  }
+}
+```
+
+5. **Response** (Client → Server)
+```json
+{
+  "type": "response",
+  "messageId": "msg_xxx",
+  "timestamp": 1234567890,
+  "data": {
+    "openId": "ou_xxx",
+    "success": true,
+    "output": "Fixed 3 TypeScript errors..."
+  }
+}
+```
+
+## Connection Management
+
+- **Heartbeat Interval**: Configurable (default: 30 seconds)
+- **Connection Timeout**: 2x heartbeat interval without response
+- **Stale Cleanup**: Automatic cleanup every heartbeat interval
+- **Reconnection**: Clients automatically reconnect on disconnect
+
+## Security
+
+### Directory Whitelisting
+
+The router itself doesn't enforce directory restrictions - this is handled by the local client. The router only forwards commands.
+
+### Device Authentication
+
+Each device:
+1. Generates a unique device ID based on machine characteristics
+2. Creates a binding code (valid for 5 minutes)
+3. User binds the code in Feishu with `/bind CODE`
+4. Router stores the binding: `open_id → device_id`
+5. All future messages from that user are routed to their device
+
+### Data Persistence
+
+- **Bindings persist across restarts** (stored in JSON file)
+- **Binding codes expire** after 5 minutes
+- **Stale bindings** can be manually removed by unbinding in Feishu
+
+## Troubleshooting
+
+### Server won't start
+
+Check configuration:
+```bash
+remote-cli-router config show
+```
+
+Ensure App ID and App Secret are set.
+
+### Feishu webhook not working
+
+1. Verify webhook URL in Feishu console matches your domain
+2. Ensure HTTPS/SSL is configured (Feishu requires HTTPS)
+3. Check firewall allows inbound connections on server port
+4. Review server logs for errors
+
+### Devices not connecting
+
+1. Check WebSocket endpoint is accessible: `ws://your-domain:port/ws`
+2. Verify firewall allows WebSocket connections
+3. Check device logs for connection errors
+4. Ensure server is running: `remote-cli-router status` (when implemented)
+
+### Messages not routing
+
+1. Verify device is connected (check `/health` endpoint)
+2. Confirm user has bound their device in Feishu
+3. Check that binding hasn't expired
+4. Review server logs for routing errors
+
+## Development
+
+### Run in dev mode
+
+```bash
+cd packages/router
+npm run dev
+```
+
+This uses `tsx watch` for hot reload during development.
+
+### Build
+
+```bash
+npm run build
+```
+
+Compiles TypeScript to `dist/` directory.
+
+### Test API
+
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Should return:
+# {
+#   "status": "ok",
+#   "timestamp": 1234567890,
+#   "connections": 0,
+#   "devices": []
+# }
+```
+
+## Production Deployment
+
+See [README.md](../../README.md) section "Router Server Deployment" for:
+- Docker deployment with docker-compose
+- Nginx reverse proxy configuration
+- SSL/TLS setup
+- Redis alternatives (now using JSON storage)
+- Monitoring and logging
+
+## File Locations
+
+- **Config**: `~/.remote-cli-router/config.json`
+- **Bindings**: `~/.remote-cli-router/bindings.json`
+- **Logs**: PM2 logs or stdout when running in foreground

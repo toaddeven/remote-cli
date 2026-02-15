@@ -322,62 +322,28 @@ cd remote-cli
 npm install
 ```
 
-### 3. Configure Environment Variables
+### 3. Configure Router Server
 
-Create a `.env` file in the `packages/router` directory:
+Run the interactive configuration:
 
 ```bash
 cd packages/router
-cat > .env << 'EOF'
-# Server Configuration
-PORT=3000
-NODE_ENV=production
-
-# Redis Configuration
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your_redis_password
-
-# Feishu Bot Configuration
-FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx
-FEISHU_APP_SECRET=your_app_secret
-FEISHU_ENCRYPT_KEY=your_encrypt_key
-FEISHU_VERIFICATION_TOKEN=your_verification_token
-
-# WebSocket Configuration
-WS_HEARTBEAT_INTERVAL=30000
-WS_RECONNECT_DELAY=5000
-
-# Security Configuration
-BINDING_CODE_EXPIRY=300000
-MAX_BINDING_ATTEMPTS=5
-EOF
+npm run build
+node dist/cli.js config
 ```
 
-### 4. Build the Router Server
+You will be prompted for:
+- **Feishu App ID** (required)
+- **Feishu App Secret** (required)
+- Feishu Encrypt Key (optional)
+- Feishu Verification Token (optional)
+- Server Port (default: 3000)
+- Server Host (default: 0.0.0.0)
+- WebSocket Heartbeat Interval (default: 30000ms)
 
-```bash
-cd ../..
-npm run build -w @xiaoyu/remote-cli-router
-```
+Configuration will be saved to `~/.remote-cli-router/config.json`.
 
-### 5. Setup Redis
-
-Install and start Redis:
-
-```bash
-# On Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install redis-server
-sudo systemctl start redis
-sudo systemctl enable redis
-
-# On macOS
-brew install redis
-brew services start redis
-```
-
-### 6. Setup Feishu Bot
+### 4. Setup Feishu Bot
 
 1. Go to [Feishu Open Platform](https://open.feishu.cn/)
 2. Create a new app (or use existing)
@@ -391,35 +357,31 @@ brew services start redis
 7. Get credentials (App ID, App Secret, Encrypt Key, Verification Token)
 8. Publish the app
 
-### 7. Start the Router Server
+### 5. Start the Router Server
 
-#### Development Mode
+Start the router server:
+
+```bash
+remote-cli-router start
+```
+
+The server will:
+- Start HTTP server on configured port (default: 3000)
+- Start WebSocket server on `/ws` endpoint
+- Begin accepting connections from local clients
+- Handle Feishu webhook callbacks at `/webhook/feishu`
+
+For development mode with auto-reload:
 
 ```bash
 npm run router:dev
 ```
 
-#### Production with PM2
-
-Install PM2:
+To run in the background with PM2:
 
 ```bash
-npm install -g pm2
-```
-
-Start the server:
-
-```bash
-cd packages/router
-pm2 start dist/index.js --name remote-cli-router
-pm2 save
-pm2 startup
-```
-
-Monitor logs:
-
-```bash
-pm2 logs remote-cli-router
+pm2 start remote-cli-router --name router -- start
+pm2 logs router
 ```
 
 #### Docker Deployment (Recommended)

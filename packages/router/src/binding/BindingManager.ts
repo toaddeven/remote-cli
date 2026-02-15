@@ -1,15 +1,15 @@
-import Redis from 'ioredis';
 import { BindingCode, UserBinding } from '../types';
+import { JsonStore } from '../storage/JsonStore';
 
 /**
  * Binding Manager
  * Responsible for managing user and device binding relationships
  */
 export class BindingManager {
-  private redis: Redis;
+  private store: JsonStore;
 
-  constructor(redisUrl: string) {
-    this.redis = new Redis(redisUrl);
+  constructor(store: JsonStore) {
+    this.store = store;
   }
 
   /**
@@ -29,10 +29,8 @@ export class BindingManager {
       expiresAt: now + 5 * 60 * 1000 // Expires after 5 minutes
     };
 
-    // Store binding code to Redis, set 5 minute expiration
-    const key = `binding:code:${code}`;
-    await this.redis.set(key, JSON.stringify(bindingCode));
-    await this.redis.expire(key, 300); // 5 minutes = 300 seconds
+    // Store binding code
+    await this.store.setBindingCode(code, bindingCode);
 
     return bindingCode;
   }
@@ -43,23 +41,7 @@ export class BindingManager {
    * @returns Binding code object, returns null if invalid or expired
    */
   async verifyBindingCode(code: string): Promise<BindingCode | null> {
-    const key = `binding:code:${code}`;
-    const data = await this.redis.get(key);
-
-    if (!data) {
-      return null;
-    }
-
-    const bindingCode: BindingCode = JSON.parse(data);
-
-    // Check if expired
-    if (Date.now() > bindingCode.expiresAt) {
-      // Delete expired binding code
-      await this.redis.del(key);
-      return null;
-    }
-
-    return bindingCode;
+    return this.store.getBindingCode(code);
   }
 
   /**
@@ -74,8 +56,7 @@ export class BindingManager {
     // Check if user already has a binding
     const existingBinding = await this.getUserBinding(openId);
     if (existingBinding) {
-      // Delete old device binding
-      await this.redis.del(`binding:device:${existingBinding.deviceId}`);
+      // Will be overwritten by setUserBinding
     }
 
     // Create new binding relationship
@@ -88,15 +69,7 @@ export class BindingManager {
     };
 
     // Store user -> device mapping
-    await this.redis.hmset(`binding:user:${openId}`, binding as any);
-
-    // Store device -> user mapping (for device-side queries)
-    await this.redis.hmset(`binding:device:${deviceId}`, {
-      openId,
-      deviceId,
-      deviceName,
-      boundAt: String(now)
-    });
+    await this.store.setUserBinding(openId, binding);
   }
 
   /**
@@ -105,19 +78,7 @@ export class BindingManager {
    * @returns Binding information, returns null if not bound
    */
   async getUserBinding(openId: string): Promise<UserBinding | null> {
-    const data = await this.redis.hgetall(`binding:user:${openId}`);
-
-    if (!data || Object.keys(data).length === 0) {
-      return null;
-    }
-
-    return {
-      openId: data.openId,
-      deviceId: data.deviceId,
-      deviceName: data.deviceName,
-      boundAt: Number(data.boundAt),
-      lastActiveAt: Number(data.lastActiveAt)
-    };
+    return this.store.getUserBinding(openId);
   }
 
   /**
@@ -126,19 +87,7 @@ export class BindingManager {
    * @returns Binding information, returns null if not bound
    */
   async getDeviceBinding(deviceId: string): Promise<UserBinding | null> {
-    const data = await this.redis.hgetall(`binding:device:${deviceId}`);
-
-    if (!data || Object.keys(data).length === 0) {
-      return null;
-    }
-
-    return {
-      openId: data.openId,
-      deviceId: data.deviceId,
-      deviceName: data.deviceName,
-      boundAt: Number(data.boundAt),
-      lastActiveAt: Number(data.lastActiveAt || data.boundAt)
-    };
+    return this.store.getDeviceBinding(deviceId);
   }
 
   /**
@@ -146,15 +95,7 @@ export class BindingManager {
    * @param openId Feishu user open_id
    */
   async unbindUser(openId: string): Promise<void> {
-    const binding = await this.getUserBinding(openId);
-
-    if (!binding) {
-      return;
-    }
-
-    // Delete bidirectional binding
-    await this.redis.del(`binding:user:${openId}`);
-    await this.redis.del(`binding:device:${binding.deviceId}`);
+    await this.store.deleteUserBinding(openId);
   }
 
   /**
@@ -162,11 +103,7 @@ export class BindingManager {
    * @param openId Feishu user open_id
    */
   async updateLastActive(openId: string): Promise<void> {
-    await this.redis.hset(
-      `binding:user:${openId}`,
-      'lastActiveAt',
-      String(Date.now())
-    );
+    await this.store.updateLastActive(openId);
   }
 
   /**
@@ -189,9 +126,9 @@ export class BindingManager {
   }
 
   /**
-   * Close Redis connection
+   * Close and flush data
    */
   async close(): Promise<void> {
-    await this.redis.quit();
+    await this.store.flush();
   }
 }

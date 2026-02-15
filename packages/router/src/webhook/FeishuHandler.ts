@@ -4,6 +4,7 @@ import { BindingManager } from '../binding/BindingManager';
 import { ConnectionHub } from '../websocket/ConnectionHub';
 import { FeishuClient } from '../feishu/FeishuClient';
 import { MessageType } from '../types';
+import { JsonStore } from '../storage/JsonStore';
 
 /**
  * Feishu Webhook Handler configuration
@@ -12,7 +13,7 @@ export interface FeishuHandlerConfig {
   appId: string;
   appSecret: string;
   encryptKey: string;
-  redisUrl: string;
+  store: JsonStore;
 }
 
 /**
@@ -32,7 +33,7 @@ export class FeishuHandler {
     this.appSecret = config.appSecret;
     this.encryptKey = config.encryptKey;
 
-    this.bindingManager = new BindingManager(config.redisUrl);
+    this.bindingManager = new BindingManager(config.store);
     this.connectionHub = new ConnectionHub();
     this.feishuClient = new FeishuClient(config.appId, config.appSecret);
   }

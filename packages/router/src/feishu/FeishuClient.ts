@@ -8,8 +8,8 @@ export class FeishuClient {
   private appId: string;
   private appSecret: string;
   private axios: AxiosInstance;
-  private accessToken?: string;
-  private tokenExpireTime?: number;
+  private accessToken: string = '';
+  private tokenExpireTime: number = 0;
 
   constructor(appId: string, appSecret: string) {
     this.appId = appId;
@@ -27,7 +27,7 @@ export class FeishuClient {
    */
   async getAccessToken(): Promise<string> {
     // If token exists and has not expired, return directly
-    if (this.accessToken && this.tokenExpireTime && Date.now() < this.tokenExpireTime) {
+    if (this.accessToken && Date.now() < this.tokenExpireTime) {
       return this.accessToken;
     }
 
@@ -41,7 +41,7 @@ export class FeishuClient {
       throw new Error(`Failed to get access token: ${response.data.msg || 'Unknown error'}`);
     }
 
-    this.accessToken = response.data.tenant_access_token;
+    this.accessToken = response.data.tenant_access_token!;
     // Token validity period, refresh 5 minutes early
     this.tokenExpireTime = Date.now() + (response.data.expire - 300) * 1000;
 
