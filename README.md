@@ -35,7 +35,9 @@ The local client runs on your development machine and connects to the router ser
 
 ### 1. Installation
 
-Install the remote CLI globally using npm:
+#### Option A: Install from npm (After Publishing)
+
+Once the package is published to npm, you can install it globally:
 
 ```bash
 npm install -g @xiaoyu/remote-cli
@@ -45,6 +47,46 @@ Or using yarn:
 
 ```bash
 yarn global add @xiaoyu/remote-cli
+```
+
+#### Option B: Install from Source (Local Development)
+
+If you're installing from source code before npm publishing:
+
+```bash
+# Clone the repository
+git clone https://github.com/xiaoyu/remote-cli.git
+cd remote-cli
+
+# Install dependencies
+npm install
+
+# Build the CLI package
+npm run build -w @xiaoyu/remote-cli
+
+# Link the package globally for local development
+cd packages/cli
+npm link
+
+# Verify installation
+remote-cli --version
+```
+
+Alternatively, install directly from the built package:
+
+```bash
+# After building, install globally from the package directory
+cd packages/cli
+npm install -g .
+```
+
+To uninstall the locally installed version later:
+
+```bash
+npm uninstall -g @xiaoyu/remote-cli
+# or if you used npm link:
+cd packages/cli
+npm unlink
 ```
 
 ### 2. Initialization
