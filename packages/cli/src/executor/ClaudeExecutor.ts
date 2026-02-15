@@ -167,11 +167,25 @@ export class ClaudeExecutor {
     });
   }
 
+  private initialOutputBuffer: string[] = [];
+  private commandOutputTimeout: NodeJS.Timeout | null = null;
+
   /**
    * Handle output from Claude process
    */
   private handleOutput(line: string): void {
+    // Always log for debugging
+    console.log('[Claude] Output line:', line);
+
+    // Store initial output (before first command)
+    if (!this.currentCommand && !this.processReady) {
+      this.initialOutputBuffer.push(line);
+      console.log('[Claude] Initial output:', line);
+      return;
+    }
+
     if (!this.currentCommand) {
+      console.log('[Claude] Output without active command:', line);
       return;
     }
 
@@ -183,10 +197,20 @@ export class ClaudeExecutor {
       this.currentCommand.onStream(line + '\n');
     }
 
+    // Reset completion timeout - command is still producing output
+    if (this.commandOutputTimeout) {
+      clearTimeout(this.commandOutputTimeout);
+    }
+
     // Check for prompt indicator that command is complete
-    // Claude typically shows a prompt like ">" or "claude>" when ready for next command
     if (this.isPromptLine(line)) {
       this.finishCurrentCommand();
+    } else {
+      // Set a timeout - if no output for 2 seconds, consider command complete
+      this.commandOutputTimeout = setTimeout(() => {
+        console.log('[Claude] No output for 2s, finishing command');
+        this.finishCurrentCommand();
+      }, 2000);
     }
   }
 
@@ -200,6 +224,7 @@ export class ClaudeExecutor {
       /^\s*claude\s*[›>]\s*/i,  // claude> or claude ›
       /^\s*\$\s*/,  // $ shell prompt
       /^\s*>>>\s*/,  // Python-style prompt
+      /⎿\s*\d+\s*⏌/,  // Claude Code progress indicator
     ];
 
     return promptPatterns.some(pattern => pattern.test(line));
@@ -213,10 +238,17 @@ export class ClaudeExecutor {
       return;
     }
 
+    // Clear the completion timeout
+    if (this.commandOutputTimeout) {
+      clearTimeout(this.commandOutputTimeout);
+      this.commandOutputTimeout = null;
+    }
+
     const output = this.outputBuffer.join('\n').trim();
     this.outputBuffer = [];
 
     console.log('[Claude] Command completed');
+    console.log('[Claude] Final output length:', output.length);
 
     this.currentCommand.resolve({
       success: true,
@@ -265,8 +297,15 @@ export class ClaudeExecutor {
 
     // Set timeout
     setTimeout(() => {
-      if (this.currentCommand && this.currentCommand.startTime === this.currentCommand.startTime) {
+      if (this.currentCommand) {
         console.error('[Claude] Command timeout');
+
+        // Clear completion timeout
+        if (this.commandOutputTimeout) {
+          clearTimeout(this.commandOutputTimeout);
+          this.commandOutputTimeout = null;
+        }
+
         this.currentCommand.reject(new Error('Execution timeout exceeded'));
         this.currentCommand = null;
         this.isExecuting = false;
