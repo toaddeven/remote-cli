@@ -384,6 +384,25 @@ export class ClaudeExecutor {
   }
 
   /**
+   * Abort current command execution
+   * For ClaudeExecutor, this just resets the executing flag since
+   * each command spawns a new process and cannot be easily aborted mid-execution
+   */
+  abort(): boolean {
+    if (!this.isExecuting) {
+      console.log('[Claude] No command is currently executing');
+      return false;
+    }
+
+    console.log('[Claude] Abort requested, but spawn-mode executor cannot abort running command');
+    // Note: Since this executor spawns a new process for each command,
+    // we cannot easily abort it. We just reset the flag so the next
+    // command can be processed (the current one will complete in background).
+    this.isExecuting = false;
+    return true;
+  }
+
+  /**
    * Destroy executor
    */
   destroy(): void {

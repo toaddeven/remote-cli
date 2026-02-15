@@ -694,6 +694,44 @@ export class ClaudePersistentExecutor extends EventEmitter {
   }
 
   /**
+   * Abort current command execution
+   * Stops the current process and rejects the pending command
+   */
+  abort(): boolean {
+    if (!this.isProcessing) {
+      console.log('[ClaudePersistent] No command is currently executing');
+      return false;
+    }
+
+    console.log('[ClaudePersistent] Aborting current command...');
+
+    // Reject current command if any
+    if (this.currentCommandReject) {
+      this.currentCommandReject(new Error('Command aborted by user'));
+    }
+
+    // Reset command state
+    this.resetCurrentCommand();
+    this.isProcessing = false;
+
+    // Stop and restart the process to ensure clean state
+    this.stopProcess().then(() => {
+      console.log('[ClaudePersistent] Process stopped after abort, will auto-restart on next command');
+    });
+
+    // Clear any pending commands in queue
+    if (this.commandQueue.length > 0) {
+      console.log(`[ClaudePersistent] Clearing ${this.commandQueue.length} pending commands from queue`);
+      for (const command of this.commandQueue) {
+        command.reject(new Error('Command aborted by user'));
+      }
+      this.commandQueue = [];
+    }
+
+    return true;
+  }
+
+  /**
    * Reset execution context
    */
   resetContext(): void {

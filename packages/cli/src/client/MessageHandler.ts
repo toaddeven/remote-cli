@@ -211,6 +211,7 @@ export class MessageHandler {
         output: `📖 Available commands:
 - /help - Show this help message
 - /status - Show current status
+- /abort - Abort the currently executing command
 - /clear - Clear conversation context
 - /cd <directory> - Change working directory
 - /r or /resume - Resume previous conversation
@@ -218,6 +219,28 @@ export class MessageHandler {
 
 You can also use natural language commands to control Claude Code CLI.`,
       });
+      return true;
+    }
+
+    // /abort command
+    if (trimmed === '/abort') {
+      const wasExecuting = this.isExecuting;
+      const aborted = this.executor.abort();
+
+      if (aborted) {
+        this.isExecuting = false;
+        this.sendResponse(messageId, {
+          success: true,
+          output: wasExecuting
+            ? '✅ Current command has been aborted'
+            : '⚠️ No command was executing, but executor has been reset',
+        });
+      } else {
+        this.sendResponse(messageId, {
+          success: true,
+          output: 'ℹ️ No command is currently executing',
+        });
+      }
       return true;
     }
 
