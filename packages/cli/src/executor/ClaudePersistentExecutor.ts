@@ -513,11 +513,9 @@ export class ClaudePersistentExecutor extends EventEmitter {
               this.currentStreamCallback(message.content);
             }
 
-            // If not partial, command is complete
-            if (!message.partial) {
-              console.log('[ClaudePersistent] Message complete (partial=false), completing command');
-              this.completeCurrentCommand(true);
-            }
+            // Note: Don't complete on partial=false here
+            // The command completion should be handled by the 'result' message
+            // which is the definitive end-of-response signal
           }
           break;
 
@@ -549,18 +547,26 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
         case 'result':
           // Result messages contain the final response and completion status
-          console.log(`[ClaudePersistent] Result received, subtype=${message.subtype}, has result=${!!message.result}`);
-          if (message.result) {
-            this.currentOutputBuffer.push(message.result);
-            if (this.currentStreamCallback) {
-              this.currentStreamCallback(message.result);
-            }
+          console.log(`[ClaudePersistent] Result received, subtype=${message.subtype}, has result=${!!message.result}, has error=${message.is_error}`);
+
+          // Send result content to stream callback if present
+          // This ensures the final content is displayed even if assistant messages were empty
+          if (message.result && this.currentStreamCallback) {
+            console.log(`[ClaudePersistent] Sending result to stream callback, length=${message.result.length}`);
+            this.currentStreamCallback(message.result);
           }
-          // Complete the command with success or error based on is_error flag
-          if (message.is_error) {
-            this.completeCurrentCommand(false, message.result || 'Command failed');
+
+          // Only complete if we're not waiting for user input
+          // The command completion should happen after all content is processed
+          if (!this.isWaitingForInput) {
+            // Complete the command with success or error based on is_error flag
+            if (message.is_error) {
+              this.completeCurrentCommand(false, message.result || 'Command failed');
+            } else {
+              this.completeCurrentCommand(true);
+            }
           } else {
-            this.completeCurrentCommand(true);
+            console.log('[ClaudePersistent] Result received but waiting for input, not completing yet');
           }
           break;
 
@@ -570,6 +576,8 @@ export class ClaudePersistentExecutor extends EventEmitter {
           // partial=true: streaming chunk, partial=false or undefined: complete message
           const isPartial = message.partial === true;
           console.log(`[ClaudePersistent] Assistant message, partial=${isPartial}, content length=${message.content?.length || 0}`);
+
+          // Always stream content if present
           if (message.content) {
             this.currentOutputBuffer.push(message.content);
             if (this.currentStreamCallback) {
@@ -578,6 +586,13 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
             // Start input detection timer after receiving content
             this.startInputDetectionTimer(message.content);
+          }
+
+          // If partial=false, this marks the end of the stream
+          // Complete the command even if content is empty (content may be in result message)
+          if (!isPartial) {
+            console.log('[ClaudePersistent] Assistant message complete (partial=false)');
+            // Don't complete here - wait for result message which has the final content
           }
           break;
 
