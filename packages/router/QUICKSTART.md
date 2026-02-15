@@ -2,14 +2,39 @@
 
 ## Installation
 
-After building the router package:
+### For Development (Recommended)
+
+If you're developing or testing the router locally:
 
 ```bash
+# 1. Build the router package
 cd packages/router
+npm run build
+
+# 2. Create global symlink
 npm link
 ```
 
-Or install globally once published:
+This creates a global `remote-cli-router` command that points to your local development directory. Any changes you make will be reflected immediately after rebuilding.
+
+**Verify installation:**
+```bash
+which remote-cli-router
+# Should show: /usr/local/bin/remote-cli-router (or similar)
+
+remote-cli-router --help
+# Should display available commands
+```
+
+**To uninstall the link:**
+```bash
+cd packages/router
+npm unlink
+```
+
+### For Production
+
+Install globally once published to npm:
 
 ```bash
 npm install -g @xiaoyu/remote-cli-router
@@ -260,7 +285,13 @@ cd packages/router
 npm run dev
 ```
 
-This uses `tsx watch` for hot reload during development.
+This uses `tsx watch` for hot reload during development. It automatically restarts the server when you modify source files.
+
+**Note:** After running `npm link`, you can use either:
+- `npm run dev` - Run with hot reload (recommended during development)
+- `remote-cli-router start` - Run the built version (for testing production behavior)
+
+If the `remote-cli-router` command is not found, run `npm link` first (see Installation section above).
 
 ### Build
 

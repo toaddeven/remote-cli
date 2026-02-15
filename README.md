@@ -305,7 +305,6 @@ The router server manages message forwarding between Feishu and local clients. I
 
 - A cloud server with at least **2 CPU cores** and **4GB RAM**
 - **Node.js** >= 18.0.0
-- **Redis** for storing binding data
 - **A domain name** with SSL certificate (HTTPS required for Feishu webhooks)
 - **Feishu bot** created and configured
 
@@ -322,14 +321,32 @@ cd remote-cli
 npm install
 ```
 
-### 3. Configure Router Server
+### 3. Build and Link Router Server
 
-Run the interactive configuration:
+Build the router package and create a global command:
 
 ```bash
 cd packages/router
 npm run build
-node dist/cli.js config
+npm link
+```
+
+This creates a global `remote-cli-router` command. Verify the installation:
+
+```bash
+which remote-cli-router
+# Should show the command path
+
+remote-cli-router --help
+# Should display available commands
+```
+
+### 4. Configure Router Server
+
+Run the interactive configuration:
+
+```bash
+remote-cli-router config
 ```
 
 You will be prompted for:
@@ -343,7 +360,17 @@ You will be prompted for:
 
 Configuration will be saved to `~/.remote-cli-router/config.json`.
 
-### 4. Setup Feishu Bot
+**View current configuration:**
+```bash
+remote-cli-router config show
+```
+
+**Reset to defaults:**
+```bash
+remote-cli-router config reset
+```
+
+### 5. Setup Feishu Bot
 
 1. Go to [Feishu Open Platform](https://open.feishu.cn/)
 2. Create a new app (or use existing)
@@ -357,7 +384,7 @@ Configuration will be saved to `~/.remote-cli-router/config.json`.
 7. Get credentials (App ID, App Secret, Encrypt Key, Verification Token)
 8. Publish the app
 
-### 5. Start the Router Server
+### 6. Start the Router Server
 
 Start the router server:
 
