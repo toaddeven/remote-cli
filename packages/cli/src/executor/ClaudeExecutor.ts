@@ -388,7 +388,7 @@ export class ClaudeExecutor {
    * For ClaudeExecutor, this just resets the executing flag since
    * each command spawns a new process and cannot be easily aborted mid-execution
    */
-  abort(): boolean {
+  async abort(): Promise<boolean> {
     if (!this.isExecuting) {
       console.log('[Claude] No command is currently executing');
       return false;

@@ -124,6 +124,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
   // Persistent process
   private claudeProcess: ChildProcess | null = null;
   private isStarting = false;
+  private isStopping = false; // Flag to indicate intentional process stop
   private commandQueue: Array<{
     prompt: string;
     options: PersistentClaudeOptions;
@@ -361,8 +362,12 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
         this.claudeProcess = null;
 
-        // Reject current command if any
-        if (this.currentCommandReject) {
+        // Check if this was an intentional stop (abort/reset)
+        const wasIntentionalStop = this.isStopping;
+        this.isStopping = false; // Reset the flag
+
+        // Reject current command if any (only for unexpected exits)
+        if (this.currentCommandReject && !wasIntentionalStop) {
           let errorMsg = `Claude process exited unexpectedly (code: ${code})`;
           if (stderrOutput) {
             errorMsg += `\nstderr: ${stderrOutput.substring(0, 500)}`;
@@ -372,10 +377,11 @@ export class ClaudePersistentExecutor extends EventEmitter {
         }
 
         // Emit event for external handling
-        this.emit('processExit', { code, signal });
+        this.emit('processExit', { code, signal, intentional: wasIntentionalStop });
 
         // Auto-restart if not destroyed and there are pending commands
-        if (!this.isDestroyed && this.commandQueue.length > 0) {
+        // Don't auto-restart if this was an intentional stop (let processQueue handle it)
+        if (!this.isDestroyed && !wasIntentionalStop && this.commandQueue.length > 0) {
           console.log('[ClaudePersistent] Auto-restarting process...');
           setTimeout(() => this.startProcess(), 1000);
         }
@@ -429,6 +435,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
     }
 
     console.log('[ClaudePersistent] Stopping process...');
+    this.isStopping = true;
 
     // Send EOF to stdin to gracefully close
     this.claudeProcess.stdin?.end();
@@ -697,13 +704,16 @@ export class ClaudePersistentExecutor extends EventEmitter {
    * Abort current command execution
    * Stops the current process and rejects the pending command
    */
-  abort(): boolean {
+  async abort(): Promise<boolean> {
     if (!this.isProcessing) {
       console.log('[ClaudePersistent] No command is currently executing');
       return false;
     }
 
     console.log('[ClaudePersistent] Aborting current command...');
+
+    // Mark as intentional stop before rejecting and stopping
+    this.isStopping = true;
 
     // Reject current command if any
     if (this.currentCommandReject) {
@@ -714,10 +724,9 @@ export class ClaudePersistentExecutor extends EventEmitter {
     this.resetCurrentCommand();
     this.isProcessing = false;
 
-    // Stop and restart the process to ensure clean state
-    this.stopProcess().then(() => {
-      console.log('[ClaudePersistent] Process stopped after abort, will auto-restart on next command');
-    });
+    // Stop the process to ensure clean state
+    await this.stopProcess();
+    console.log('[ClaudePersistent] Process stopped after abort');
 
     // Clear any pending commands in queue
     if (this.commandQueue.length > 0) {

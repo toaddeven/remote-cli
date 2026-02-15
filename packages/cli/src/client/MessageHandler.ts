@@ -160,7 +160,7 @@ export class MessageHandler {
    */
   private async handleAbortCommand(messageId: string): Promise<void> {
     const wasExecuting = this.isExecuting;
-    const aborted = this.executor.abort();
+    const aborted = await this.executor.abort();
 
     if (aborted) {
       this.isExecuting = false;
