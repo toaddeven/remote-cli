@@ -548,6 +548,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
         case 'result':
           // Result messages contain the final response and completion status
           console.log(`[ClaudePersistent] Result received, subtype=${message.subtype}, has result=${!!message.result}, has error=${message.is_error}`);
+          console.log(`[ClaudePersistent] Result message FULL: ${JSON.stringify(message)}`);
 
           // Send result content to stream callback if present
           // This ensures the final content is displayed even if assistant messages were empty
@@ -575,7 +576,8 @@ export class ClaudePersistentExecutor extends EventEmitter {
           // They can be partial (streaming) or complete
           // partial=true: streaming chunk, partial=false or undefined: complete message
           const isPartial = message.partial === true;
-          console.log(`[ClaudePersistent] Assistant message, partial=${isPartial}, content length=${message.content?.length || 0}`);
+          console.log(`[ClaudePersistent] Assistant message, partial=${isPartial}`);
+          console.log(`[ClaudePersistent] Assistant message FULL: ${JSON.stringify(message)}`);
 
           // Always stream content if present
           if (message.content) {
