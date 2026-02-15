@@ -216,6 +216,7 @@ export class RouterServer {
               // Device sends response to command - forward to Feishu via long connection
               const responseOpenId = message.openId || message.data?.openId;
               const responseMessageId = message.messageId;
+              const sessionAbbr = message.sessionAbbr || message.data?.sessionAbbr;
               if (responseMessageId && responseOpenId) {
                 // Check if this was a streaming message (stream chunks were sent)
                 if (this.streamingMessages.has(responseMessageId)) {
@@ -223,7 +224,8 @@ export class RouterServer {
                     responseMessageId,
                     message.success ?? message.data?.success,
                     message.output || message.data?.output,
-                    message.error || message.data?.error
+                    message.error || message.data?.error,
+                    sessionAbbr
                   );
                 } else {
                   // No streaming session found - session should have been created when command was sent
@@ -345,7 +347,7 @@ export class RouterServer {
   /**
    * Finalize streaming message
    */
-  private async finalizeStreamingMessage(messageId: string, success: boolean, output?: string, error?: string): Promise<void> {
+  private async finalizeStreamingMessage(messageId: string, success: boolean, output?: string, error?: string, sessionAbbr?: string): Promise<void> {
     const streamData = this.streamingMessages.get(messageId);
     if (!streamData) return;
 
@@ -355,7 +357,8 @@ export class RouterServer {
       if (success) {
         await this.feishuLongConnHandler.finalizeStreamingMessage(
           feishuMessageId,
-          output || '✅ Completed'
+          output || '✅ Completed',
+          sessionAbbr
         );
       } else {
         // Replace with error message

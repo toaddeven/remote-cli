@@ -8,6 +8,8 @@ export interface IncomingMessage {
   workingDirectory?: string;
   openId?: string;
   timestamp: number;
+  /** Whether this is a passthrough slash command */
+  isSlashCommand?: boolean;
 }
 
 /**

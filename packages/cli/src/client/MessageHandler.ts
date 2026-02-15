@@ -2,6 +2,7 @@ import { WebSocketClient } from './WebSocketClient';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import { IncomingMessage, OutgoingMessage } from '../types';
 import type { ClaudeExecutor, ClaudePersistentExecutor } from '../executor';
+import { spawn } from 'child_process';
 
 /**
  * Legacy message type for backward compatibility
@@ -84,7 +85,7 @@ export class MessageHandler {
    * Handle command message
    */
   private async handleCommandMessage(message: IncomingMessage): Promise<void> {
-    const { messageId, content, workingDirectory, openId } = message;
+    const { messageId, content, workingDirectory, openId, isSlashCommand } = message;
 
     // Store openId for response routing
     this.currentOpenId = openId;
@@ -122,6 +123,13 @@ export class MessageHandler {
       // Handle built-in commands
       const builtInResult = await this.handleBuiltInCommand(messageId, content!);
       if (builtInResult) {
+        return;
+      }
+
+      // Check if this is a passthrough slash command from server
+      if (isSlashCommand) {
+        console.log(`[MessageHandler] Executing passthrough slash command: ${content}`);
+        await this.executeSlashCommand(messageId, content!);
         return;
       }
 
@@ -276,6 +284,74 @@ You can also use natural language commands to control Claude Code CLI.`,
   }
 
   /**
+   * Execute passthrough slash command using local Claude CLI
+   * This allows users to use their custom slash commands
+   */
+  private async executeSlashCommand(messageId: string, command: string): Promise<void> {
+    return new Promise((resolve) => {
+      const chunks: string[] = [];
+      const errorChunks: string[] = [];
+
+      console.log(`[MessageHandler] Spawning Claude CLI for command: ${command}`);
+
+      // Spawn Claude CLI with the slash command
+      // Use --print to get output and exit
+      const child = spawn('claude', [command, '--print'], {
+        cwd: this.executor.getCurrentWorkingDirectory(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          CLAUDECODE: '', // Prevent nested session error
+        },
+      });
+
+      // Handle stdout (stream chunks)
+      child.stdout?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        chunks.push(chunk);
+        this.sendStreamChunk(messageId, chunk);
+      });
+
+      // Handle stderr
+      child.stderr?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        errorChunks.push(chunk);
+        console.error(`[MessageHandler] Claude stderr: ${chunk}`);
+      });
+
+      // Handle process exit
+      child.on('exit', (code) => {
+        console.log(`[MessageHandler] Claude process exited with code: ${code}`);
+
+        if (code === 0) {
+          const output = chunks.join('');
+          this.sendResponse(messageId, {
+            success: true,
+            output: output.trim() || '✅ Command executed successfully',
+          });
+        } else {
+          const errorOutput = errorChunks.join('') || chunks.join('');
+          this.sendResponse(messageId, {
+            success: false,
+            error: errorOutput.trim() || `Command failed with exit code ${code}`,
+          });
+        }
+        resolve();
+      });
+
+      // Handle process error
+      child.on('error', (error) => {
+        console.error(`[MessageHandler] Failed to spawn Claude:`, error);
+        this.sendResponse(messageId, {
+          success: false,
+          error: `Failed to execute command: ${error.message}`,
+        });
+        resolve();
+      });
+    });
+  }
+
+  /**
    * Execute Claude command
    */
   private async executeCommand(
@@ -321,7 +397,7 @@ You can also use natural language commands to control Claude Code CLI.`,
    */
   private sendResponse(
     messageId: string,
-    result: { success: boolean; output?: string; error?: string }
+    result: { success: boolean; output?: string; error?: string; sessionAbbr?: string }
   ): void {
     try {
       this.wsClient.send({
@@ -330,6 +406,7 @@ You can also use natural language commands to control Claude Code CLI.`,
         success: result.success,
         output: result.output,
         error: result.error,
+        sessionAbbr: result.sessionAbbr,
         openId: this.currentOpenId,
         timestamp: Date.now(),
       });

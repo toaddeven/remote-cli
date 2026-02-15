@@ -84,6 +84,8 @@ export interface PersistentClaudeResult {
   output?: string;
   /** Error message */
   error?: string;
+  /** Session ID abbreviation (last 8 chars) */
+  sessionAbbr?: string;
 }
 
 /**
@@ -556,9 +558,12 @@ export class ClaudePersistentExecutor extends EventEmitter {
     console.log(`[ClaudePersistent] Completing command, success=${success}, output length=${output.length}, output preview: ${output.substring(0, 100)}...`);
 
     if (success && this.currentCommandResolve) {
+      // Get session abbreviation (last 8 characters of session ID)
+      const sessionAbbr = this.sessionId ? this.sessionId.slice(-8) : undefined;
       this.currentCommandResolve({
         success: true,
         output: output.trim(),
+        sessionAbbr,
       });
     } else if (this.currentCommandReject) {
       this.currentCommandReject(new Error(errorMessage || 'Command failed'));

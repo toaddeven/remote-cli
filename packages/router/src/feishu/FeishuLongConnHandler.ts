@@ -139,7 +139,76 @@ export class FeishuLongConnHandler {
         break;
 
       default:
-        await this.replyToMessage(messageId, 'Unknown command, send /help to see help');
+        // Pass through unknown slash commands to the client
+        // This allows users to use their local Claude Code custom commands
+        await this.handleSlashCommandPassthrough(openId, messageId, content, command);
+    }
+  }
+
+  /**
+   * Handle slash command passthrough to client
+   * Passes unknown slash commands to the local Claude Code instance
+   */
+  private async handleSlashCommandPassthrough(
+    openId: string,
+    messageId: string,
+    content: string,
+    command: string
+  ): Promise<void> {
+    try {
+      // Find user binding
+      const binding = await this.bindingManager.getUserBinding(openId);
+      if (!binding) {
+        await this.replyToMessage(
+          messageId,
+          '❌ You have not bound a device yet, please send /bind <binding-code> to bind first'
+        );
+        return;
+      }
+
+      // Check if ConnectionHub is available
+      if (!this.connectionHub) {
+        await this.replyToMessage(messageId, '❌ Server error: ConnectionHub not initialized');
+        return;
+      }
+
+      // Check if device is online
+      if (!this.connectionHub.isDeviceOnline(binding.deviceId)) {
+        await this.replyToMessage(
+          messageId,
+          `❌ Device ${binding.deviceName} is currently offline, please ensure the device is started and connected to the server`
+        );
+        return;
+      }
+
+      console.log(`[FeishuHandler] Passing through slash command: ${command}`);
+
+      // Generate message ID first
+      const commandMessageId = uuidv4();
+
+      // Register streaming session BEFORE sending command
+      const feishuMessageId = await this.sendStreamingStart(openId, `🤔 Executing ${command}...`);
+      console.log(`[FeishuHandler] Created card ${feishuMessageId} for slash command ${commandMessageId}`);
+      if (this.onStartStreaming) {
+        this.onStartStreaming(commandMessageId, openId, feishuMessageId);
+      }
+
+      // Send slash command to device - the client will execute it locally
+      const success = await this.connectionHub.sendToDevice(binding.deviceId, {
+        type: MessageType.COMMAND,
+        messageId: commandMessageId,
+        timestamp: Date.now(),
+        content, // Send the full command including arguments
+        openId,
+        isSlashCommand: true, // Flag to indicate this is a slash command
+      });
+
+      if (!success) {
+        await this.replyToMessage(messageId, '❌ Command sending failed, please try again later');
+      }
+    } catch (error) {
+      console.error('Error handling slash command passthrough:', error);
+      await this.replyToMessage(messageId, '❌ Error processing command, please try again later');
     }
   }
 
@@ -405,8 +474,14 @@ Examples:
   /**
    * Finalize streaming message
    */
-  async finalizeStreamingMessage(messageId: string, finalText: string): Promise<boolean> {
+  async finalizeStreamingMessage(messageId: string, finalText: string, sessionAbbr?: string): Promise<boolean> {
     try {
+      // Build note content with session abbreviation if available
+      let noteContent = '✅ Completed';
+      if (sessionAbbr) {
+        noteContent += ` · Session: ${sessionAbbr}`;
+      }
+
       await this.client.im.message.patch({
         path: { message_id: messageId },
         data: {
@@ -425,7 +500,7 @@ Examples:
                 elements: [
                   {
                     tag: 'plain_text',
-                    content: '✅ Completed',
+                    content: noteContent,
                   },
                 ],
               },
