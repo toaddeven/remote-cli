@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 export interface WebSocketClientOptions {
   /** Reconnect interval (milliseconds), default 5000 */
   reconnectInterval?: number;
-  /** Heartbeat interval (milliseconds), default 30000 */
+  /** Heartbeat interval (milliseconds), default 15000 */
   heartbeatInterval?: number;
 }
 
@@ -44,7 +44,7 @@ export class WebSocketClient {
     this.serverUrl = serverUrl;
     this.deviceId = deviceId;
     this.reconnectInterval = options.reconnectInterval ?? 5000;
-    this.heartbeatInterval = options.heartbeatInterval ?? 30000;
+    this.heartbeatInterval = options.heartbeatInterval ?? 15000;
   }
 
   /**

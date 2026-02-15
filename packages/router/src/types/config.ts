@@ -48,7 +48,7 @@ export const DEFAULT_CONFIG = {
     verificationToken: '',
   },
   websocket: {
-    heartbeatInterval: 30000,
+    heartbeatInterval: 15000,
     reconnectDelay: 5000,
   },
   security: {

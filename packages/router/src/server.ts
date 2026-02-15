@@ -156,12 +156,12 @@ export class RouterServer {
       const resetHeartbeat = () => {
         if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
 
-        // If no heartbeat received within 2x interval, consider connection dead
+        // If no heartbeat received within 3x interval, consider connection dead
         const interval = this.config.get('websocket', 'heartbeatInterval');
         heartbeatTimeout = setTimeout(() => {
           console.log('Heartbeat timeout for device:', deviceId);
           ws.close();
-        }, interval * 2);
+        }, interval * 3);
       };
 
       resetHeartbeat();
