@@ -1,6 +1,5 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import { DirectoryGuard } from '../security/DirectoryGuard';
-import readline from 'readline';
 
 /**
  * Claude execution options
@@ -26,7 +25,7 @@ export interface ClaudeExecuteResult {
 
 /**
  * Claude Executor
- * Manages a persistent Claude Code CLI process for session continuity
+ * Uses Claude Code CLI with --resume for session continuity
  */
 export class ClaudeExecutor {
   private directoryGuard: DirectoryGuard;
@@ -34,21 +33,7 @@ export class ClaudeExecutor {
   private isExecuting = false;
   private isDestroyed = false;
   private defaultTimeout = 300000; // 5 minutes
-
-  // Persistent Claude Code process
-  private claudeProcess: ChildProcess | null = null;
-  private commandQueue: Array<{
-    prompt: string;
-    resolve: (result: ClaudeExecuteResult) => void;
-    reject: (error: Error) => void;
-    onStream?: (chunk: string) => void;
-    timeout: number;
-    startTime: number;
-  }> = [];
-  private currentCommand: typeof this.commandQueue[0] | null = null;
-  private outputBuffer: string[] = [];
-  private processReady = false;
-  private readyCallbacks: Array<() => void> = [];
+  private firstExecution = true;
 
   constructor(directoryGuard: DirectoryGuard) {
     this.directoryGuard = directoryGuard;
@@ -76,251 +61,6 @@ export class ClaudeExecutor {
   }
 
   /**
-   * Initialize the persistent Claude Code process
-   */
-  private async initializeProcess(): Promise<void> {
-    if (this.claudeProcess && !this.claudeProcess.killed) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      console.log('[Claude] Starting persistent Claude Code process...');
-      console.log(`[Claude] Working directory: ${this.currentWorkingDirectory}`);
-
-      // Start Claude Code in interactive mode (without --print)
-      const child = spawn('claude', [], {
-        cwd: this.currentWorkingDirectory,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          // Force non-interactive mode for automation but keep session alive
-          CI: 'true',
-          FORCE_COLOR: '0',
-          TERM: 'dumb',
-        },
-      });
-
-      this.claudeProcess = child;
-
-      console.log(`[Claude] Process started with PID: ${child.pid}`);
-
-      // Handle stdout
-      const stdoutReader = readline.createInterface({
-        input: child.stdout!,
-        crlfDelay: Infinity,
-      });
-
-      stdoutReader.on('line', (line) => {
-        console.log('[Claude stdout]', line);
-        this.handleOutput(line);
-      });
-
-      // Handle stderr
-      const stderrReader = readline.createInterface({
-        input: child.stderr!,
-        crlfDelay: Infinity,
-      });
-
-      stderrReader.on('line', (line) => {
-        console.error('[Claude stderr]', line);
-        this.handleOutput(line);
-      });
-
-      // Handle process exit
-      child.on('close', (code) => {
-        console.log(`[Claude] Process exited with code: ${code}`);
-        this.claudeProcess = null;
-        this.processReady = false;
-
-        // Reject current command if any
-        if (this.currentCommand) {
-          this.currentCommand.reject(new Error(`Claude process exited with code ${code}`));
-          this.currentCommand = null;
-        }
-
-        // Reject queued commands
-        while (this.commandQueue.length > 0) {
-          const cmd = this.commandQueue.shift()!;
-          cmd.reject(new Error('Claude process exited'));
-        }
-      });
-
-      // Handle process errors
-      child.on('error', (error) => {
-        console.error('[Claude] Process error:', error);
-        if (error.message.includes('ENOENT')) {
-          reject(new Error(
-            'Claude Code CLI not found. Please ensure Claude Code is installed and available in PATH.\n' +
-            'Installation: https://docs.anthropic.com/en/docs/claude-code/installation'
-          ));
-        } else {
-          reject(error);
-        }
-      });
-
-      // Wait a bit for process to initialize
-      setTimeout(() => {
-        this.processReady = true;
-        console.log('[Claude] Process ready');
-        resolve();
-      }, 2000);
-    });
-  }
-
-  private initialOutputBuffer: string[] = [];
-  private commandOutputTimeout: NodeJS.Timeout | null = null;
-
-  /**
-   * Handle output from Claude process
-   */
-  private handleOutput(line: string): void {
-    // Always log for debugging
-    console.log('[Claude] Output line:', line);
-
-    // Store initial output (before first command)
-    if (!this.currentCommand && !this.processReady) {
-      this.initialOutputBuffer.push(line);
-      console.log('[Claude] Initial output:', line);
-      return;
-    }
-
-    if (!this.currentCommand) {
-      console.log('[Claude] Output without active command:', line);
-      return;
-    }
-
-    // Buffer the output
-    this.outputBuffer.push(line);
-
-    // Stream to callback
-    if (this.currentCommand.onStream) {
-      this.currentCommand.onStream(line + '\n');
-    }
-
-    // Reset completion timeout - command is still producing output
-    if (this.commandOutputTimeout) {
-      clearTimeout(this.commandOutputTimeout);
-    }
-
-    // Check for prompt indicator that command is complete
-    if (this.isPromptLine(line)) {
-      this.finishCurrentCommand();
-    } else {
-      // Set a timeout - if no output for 2 seconds, consider command complete
-      this.commandOutputTimeout = setTimeout(() => {
-        console.log('[Claude] No output for 2s, finishing command');
-        this.finishCurrentCommand();
-      }, 2000);
-    }
-  }
-
-  /**
-   * Check if line is a prompt indicator
-   */
-  private isPromptLine(line: string): boolean {
-    // Common prompt patterns in Claude Code
-    const promptPatterns = [
-      /^\s*[›>]\s*$/,  // › or > prompt
-      /^\s*claude\s*[›>]\s*/i,  // claude> or claude ›
-      /^\s*\$\s*/,  // $ shell prompt
-      /^\s*>>>\s*/,  // Python-style prompt
-      /⎿\s*\d+\s*⏌/,  // Claude Code progress indicator
-    ];
-
-    return promptPatterns.some(pattern => pattern.test(line));
-  }
-
-  /**
-   * Finish current command and resolve
-   */
-  private finishCurrentCommand(): void {
-    if (!this.currentCommand) {
-      return;
-    }
-
-    // Clear the completion timeout
-    if (this.commandOutputTimeout) {
-      clearTimeout(this.commandOutputTimeout);
-      this.commandOutputTimeout = null;
-    }
-
-    const output = this.outputBuffer.join('\n').trim();
-    this.outputBuffer = [];
-
-    console.log('[Claude] Command completed');
-    console.log('[Claude] Final output length:', output.length);
-
-    this.currentCommand.resolve({
-      success: true,
-      output,
-    });
-
-    this.currentCommand = null;
-    this.isExecuting = false;
-
-    // Process next command in queue
-    this.processNextCommand();
-  }
-
-  /**
-   * Process next command in queue
-   */
-  private async processNextCommand(): Promise<void> {
-    if (this.currentCommand || this.commandQueue.length === 0) {
-      return;
-    }
-
-    // Ensure process is running
-    if (!this.claudeProcess || this.claudeProcess.killed) {
-      try {
-        await this.initializeProcess();
-      } catch (error) {
-        // Reject all queued commands
-        while (this.commandQueue.length > 0) {
-          const cmd = this.commandQueue.shift()!;
-          cmd.reject(error instanceof Error ? error : new Error(String(error)));
-        }
-        return;
-      }
-    }
-
-    this.currentCommand = this.commandQueue.shift()!;
-    this.isExecuting = true;
-    this.outputBuffer = [];
-
-    const { prompt, timeout } = this.currentCommand;
-
-    console.log(`[Claude] Executing: ${prompt.substring(0, 100)}...`);
-
-    // Send command to Claude process
-    this.claudeProcess!.stdin!.write(prompt + '\n');
-
-    // Set timeout
-    setTimeout(() => {
-      if (this.currentCommand) {
-        console.error('[Claude] Command timeout');
-
-        // Clear completion timeout
-        if (this.commandOutputTimeout) {
-          clearTimeout(this.commandOutputTimeout);
-          this.commandOutputTimeout = null;
-        }
-
-        this.currentCommand.reject(new Error('Execution timeout exceeded'));
-        this.currentCommand = null;
-        this.isExecuting = false;
-        this.outputBuffer = [];
-
-        // Try to cancel current operation by sending Ctrl+C
-        this.claudeProcess!.stdin!.write('\x03');
-
-        // Process next command
-        this.processNextCommand();
-      }
-    }, timeout);
-  }
-
-  /**
    * Execute Claude command
    * @param prompt Command prompt
    * @param options Execution options
@@ -337,22 +77,130 @@ export class ClaudeExecutor {
       };
     }
 
-    const timeout = options.timeout || this.defaultTimeout;
+    if (this.isExecuting) {
+      return {
+        success: false,
+        error: 'Executor is busy, please wait for current task to complete',
+      };
+    }
 
+    this.isExecuting = true;
+
+    try {
+      const timeout = options.timeout || this.defaultTimeout;
+      const result = await this.executeWithClaudeCLI(prompt, options, timeout);
+      this.firstExecution = false;
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        error: this.formatError(error),
+      };
+    } finally {
+      this.isExecuting = false;
+    }
+  }
+
+  /**
+   * Execute using local Claude Code CLI with --resume for session continuity
+   */
+  private async executeWithClaudeCLI(
+    prompt: string,
+    options: ClaudeExecuteOptions,
+    timeout: number
+  ): Promise<ClaudeExecuteResult> {
     return new Promise((resolve, reject) => {
-      this.commandQueue.push({
-        prompt,
-        resolve,
-        reject,
-        onStream: options.onStream,
-        timeout,
-        startTime: Date.now(),
+      const outputChunks: string[] = [];
+      let timeoutTimer: NodeJS.Timeout;
+
+      // Build claude command arguments
+      // Use --print for non-interactive mode
+      // Use --resume to continue previous session (after first execution)
+      const args: string[] = ['--print'];
+      if (!this.firstExecution) {
+        args.push('--resume');
+      }
+      args.push(prompt);
+
+      console.log(`[Claude] Starting: claude ${args.join(' ')}`);
+      console.log(`[Claude] Working directory: ${this.currentWorkingDirectory}`);
+      console.log(`[Claude] Session mode: ${this.firstExecution ? 'new' : 'resume'}`);
+
+      const child = spawn('claude', args, {
+        cwd: this.currentWorkingDirectory,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          CI: 'true',
+          FORCE_COLOR: '0',
+        },
       });
 
-      // Try to process immediately if not busy
-      if (!this.isExecuting) {
-        this.processNextCommand();
-      }
+      console.log(`[Claude] Process started with PID: ${child.pid}`);
+
+      // Handle stdout
+      child.stdout.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        console.log('[Claude stdout]', chunk);
+        outputChunks.push(chunk);
+        if (options.onStream) {
+          options.onStream(chunk);
+        }
+      });
+
+      // Handle stderr
+      child.stderr.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        console.error('[Claude stderr]', chunk);
+        outputChunks.push(chunk);
+        if (options.onStream) {
+          options.onStream(chunk);
+        }
+      });
+
+      // Handle timeout
+      timeoutTimer = setTimeout(() => {
+        console.error('[Claude] Command timeout');
+        child.kill('SIGTERM');
+        reject(new Error('Execution timeout exceeded'));
+      }, timeout);
+
+      // Handle process completion
+      child.on('close', (code) => {
+        clearTimeout(timeoutTimer);
+        console.log(`[Claude] Process exited with code: ${code}`);
+
+        const output = outputChunks.join('');
+
+        if (code === 0) {
+          console.log('[Claude] Execution completed successfully');
+          resolve({
+            success: true,
+            output: output.trim(),
+          });
+        } else {
+          console.error(`[Claude] Execution failed with code ${code}`);
+          resolve({
+            success: false,
+            error: `Claude Code process exited with code ${code}${output ? '\n' + output : ''}`,
+          });
+        }
+      });
+
+      // Handle process errors
+      child.on('error', (error) => {
+        clearTimeout(timeoutTimer);
+        console.error('[Claude] Process error:', error);
+
+        if (error.message.includes('ENOENT')) {
+          reject(new Error(
+            'Claude Code CLI not found. Please ensure Claude Code is installed and available in PATH.\n' +
+            'Installation: https://docs.anthropic.com/en/docs/claude-code/installation'
+          ));
+        } else {
+          reject(error);
+        }
+      });
     });
   }
 
@@ -377,18 +225,11 @@ export class ClaudeExecutor {
 
   /**
    * Reset execution context
+   * This will start a new session on next execution
    */
   resetContext(): void {
-    // Kill and restart the process to reset context
-    if (this.claudeProcess && !this.claudeProcess.killed) {
-      this.claudeProcess.kill('SIGTERM');
-      this.claudeProcess = null;
-    }
-    this.processReady = false;
-    this.currentCommand = null;
-    this.commandQueue = [];
-    this.outputBuffer = [];
-    this.isExecuting = false;
+    this.firstExecution = true;
+    console.log('[Claude] Context reset - next execution will start new session');
   }
 
   /**
@@ -397,16 +238,5 @@ export class ClaudeExecutor {
   destroy(): void {
     this.isDestroyed = true;
     this.isExecuting = false;
-
-    if (this.claudeProcess && !this.claudeProcess.killed) {
-      this.claudeProcess.kill('SIGTERM');
-      this.claudeProcess = null;
-    }
-
-    // Reject all queued commands
-    while (this.commandQueue.length > 0) {
-      const cmd = this.commandQueue.shift()!;
-      cmd.reject(new Error('Executor has been destroyed'));
-    }
   }
 }
