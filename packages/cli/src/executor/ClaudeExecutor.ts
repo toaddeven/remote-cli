@@ -33,7 +33,6 @@ export class ClaudeExecutor {
   private isExecuting = false;
   private isDestroyed = false;
   private defaultTimeout = 300000; // 5 minutes
-  private firstExecution = true;
 
   constructor(directoryGuard: DirectoryGuard) {
     this.directoryGuard = directoryGuard;
@@ -89,7 +88,6 @@ export class ClaudeExecutor {
     try {
       const timeout = options.timeout || this.defaultTimeout;
       const result = await this.executeWithClaudeCLI(prompt, options, timeout);
-      this.firstExecution = false;
       return result;
     } catch (error) {
       return {
@@ -115,16 +113,10 @@ export class ClaudeExecutor {
 
       // Build claude command arguments
       // Use --print for non-interactive mode
-      // Use --resume to continue previous session (after first execution)
-      const args: string[] = ['--print'];
-      if (!this.firstExecution) {
-        args.push('--resume');
-      }
-      args.push(prompt);
+      const args = ['--print', prompt];
 
       console.log(`[Claude] Starting: claude ${args.join(' ')}`);
       console.log(`[Claude] Working directory: ${this.currentWorkingDirectory}`);
-      console.log(`[Claude] Session mode: ${this.firstExecution ? 'new' : 'resume'}`);
 
       const child = spawn('claude', args, {
         cwd: this.currentWorkingDirectory,
@@ -225,11 +217,11 @@ export class ClaudeExecutor {
 
   /**
    * Reset execution context
-   * This will start a new session on next execution
+   * Note: With --print mode, each command is already stateless
    */
   resetContext(): void {
-    this.firstExecution = true;
-    console.log('[Claude] Context reset - next execution will start new session');
+    // No-op in --print mode since each command is independent
+    console.log('[Claude] Context reset (no-op in --print mode)');
   }
 
   /**
