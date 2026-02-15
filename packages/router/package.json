@@ -2,15 +2,15 @@
   "name": "@xiaoyu/remote-cli-router",
   "version": "1.0.0",
   "description": "Router server for remote CLI",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/cli.js",
+  "types": "dist/cli.d.ts",
   "bin": {
     "remote-cli-router": "./bin/remote-cli-router.js"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "tsx watch src/cli.ts -- start",
+    "start": "node dist/cli.js start",
     "test": "vitest",
     "test:coverage": "vitest --coverage"
   },
