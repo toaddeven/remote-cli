@@ -204,16 +204,20 @@ export class RouterServer {
 
             case MessageType.RESPONSE:
               // Device sends response to command - forward to Feishu via long connection
-              if (message.data.openId) {
-                if (message.data.success) {
+              const responseOpenId = message.openId || message.data?.openId;
+              if (responseOpenId) {
+                const output = message.output || message.data?.output;
+                const success = message.success ?? message.data?.success;
+                const errorMsg = message.error || message.data?.error;
+                if (success) {
                   await this.feishuLongConnHandler.sendMessage(
-                    message.data.openId,
-                    message.data.output || '✅ Command completed successfully'
+                    responseOpenId,
+                    output || '✅ Command completed successfully'
                   );
                 } else {
                   await this.feishuLongConnHandler.sendMessage(
-                    message.data.openId,
-                    `❌ Command failed:\n${message.data.error || 'Unknown error'}`
+                    responseOpenId,
+                    `❌ Command failed:\n${errorMsg || 'Unknown error'}`
                   );
                 }
               }

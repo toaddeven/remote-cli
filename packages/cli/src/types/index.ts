@@ -6,6 +6,7 @@ export interface IncomingMessage {
   messageId: string;
   content?: string;
   workingDirectory?: string;
+  openId?: string;
   timestamp: number;
 }
 
@@ -22,4 +23,5 @@ export interface OutgoingMessage {
   status?: any;
   timestamp: number;
   workingDirectory?: string;
+  openId?: string;
 }

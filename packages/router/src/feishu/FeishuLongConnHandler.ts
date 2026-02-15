@@ -260,10 +260,8 @@ Examples:
         type: MessageType.COMMAND,
         messageId: uuidv4(),
         timestamp: Date.now(),
-        data: {
-          openId,
-          content
-        }
+        content,
+        openId
       });
 
       if (!success) {

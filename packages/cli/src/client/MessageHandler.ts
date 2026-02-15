@@ -23,6 +23,7 @@ export class MessageHandler {
   private directoryGuard: DirectoryGuard;
   private isDestroyed = false;
   private isExecuting = false;
+  private currentOpenId?: string;
 
   constructor(
     wsClient: WebSocketClient,
@@ -75,7 +76,10 @@ export class MessageHandler {
    * Handle command message
    */
   private async handleCommandMessage(message: IncomingMessage): Promise<void> {
-    const { messageId, content, workingDirectory } = message;
+    const { messageId, content, workingDirectory, openId } = message;
+
+    // Store openId for response routing
+    this.currentOpenId = openId;
 
     // Check if there is a task currently executing
     if (this.isExecuting) {
@@ -312,12 +316,12 @@ You can also use natural language commands to control Claude Code CLI.`,
   ): void {
     try {
       this.wsClient.send({
-        type: 'result',
+        type: 'response',
         messageId,
         success: result.success,
         output: result.output,
         error: result.error,
-        cwd: this.executor.getCurrentWorkingDirectory(),
+        openId: this.currentOpenId,
         timestamp: Date.now(),
       });
     } catch (error) {
