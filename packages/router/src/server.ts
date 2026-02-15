@@ -258,13 +258,22 @@ export class RouterServer {
               break;
 
             case MessageType.NOTIFICATION:
-              // Handle notification from device - forward to Feishu
+              // Handle notification from device - only forward actionable notifications
+              // that require user intervention (authorization, input required)
               if (message.openId && message.title && message.message) {
-                console.log(`[RouterServer] Forwarding notification to ${message.openId}: ${message.title}`);
-                await this.feishuLongConnHandler.sendMessage(
-                  message.openId,
-                  `**${message.title}**\n\n${message.message}`
-                );
+                const actionablePrefixes = ['🔒', '⌨️']; // Authorization Required, Waiting for Input
+                const isActionable = actionablePrefixes.some(prefix => message.title.startsWith(prefix));
+
+                if (isActionable) {
+                  console.log(`[RouterServer] Forwarding actionable notification to ${message.openId}: ${message.title}`);
+                  await this.feishuLongConnHandler.sendMessage(
+                    message.openId,
+                    `**${message.title}**\n\n${message.message}`
+                  );
+                } else {
+                  // Log non-actionable notifications but don't forward to user
+                  console.log(`[RouterServer] Ignoring notification (non-actionable): ${message.title}`);
+                }
               }
               break;
 
