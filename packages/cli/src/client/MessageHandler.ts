@@ -68,6 +68,10 @@ export class MessageHandler {
         // Silently ignore heartbeat responses from server
         return;
 
+      case 'binding_confirm':
+        // Silently ignore binding confirmation from server
+        return;
+
       default:
         this.sendResponse(message.messageId!, {
           success: false,
