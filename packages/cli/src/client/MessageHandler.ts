@@ -246,12 +246,12 @@ You can also use natural language commands to control Claude Code CLI.`,
   }
 
   /**
-   * 展开命令快捷方式
+   * Expand command shortcuts
    */
   private expandCommandShortcuts(content: string): string {
     const trimmed = content.trim();
 
-    // 只在命令是整个内容时才展开
+    // Only expand when command is the entire content
     if (trimmed === '/r' || trimmed === '/resume') {
       return 'Please resume the previous conversation';
     }
@@ -264,7 +264,7 @@ You can also use natural language commands to control Claude Code CLI.`,
   }
 
   /**
-   * 执行 Claude 命令
+   * Execute Claude command
    */
   private async executeCommand(
     messageId: string,
@@ -287,7 +287,7 @@ You can also use natural language commands to control Claude Code CLI.`,
   }
 
   /**
-   * 发送流式输出块
+   * Send streaming output chunk
    */
   private sendStreamChunk(messageId: string, chunk: string): void {
     try {
@@ -298,13 +298,13 @@ You can also use natural language commands to control Claude Code CLI.`,
         timestamp: Date.now(),
       });
     } catch (error) {
-      // 忽略发送错误，不影响主流程
+      // Ignore send errors, don't affect main flow
       console.error('Failed to send stream chunk:', error);
     }
   }
 
   /**
-   * 发送响应
+   * Send response
    */
   private sendResponse(
     messageId: string,
@@ -326,7 +326,7 @@ You can also use natural language commands to control Claude Code CLI.`,
   }
 
   /**
-   * 销毁处理器
+   * Destroy handler
    */
   destroy(): void {
     this.isDestroyed = true;

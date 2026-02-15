@@ -185,6 +185,34 @@ export class WebSocketClient {
   }
 
   /**
+   * Event emitter style: on method
+   * @param event Event name
+   * @param handler Event handler
+   */
+  on(event: 'connected', handler: () => void): void;
+  on(event: 'disconnected', handler: () => void): void;
+  on(event: 'error', handler: (error: Error) => void): void;
+  on(event: 'message', handler: (message: any) => void): void;
+  on(event: string, handler: (...args: any[]) => void): void {
+    switch (event) {
+      case 'connected':
+        this.onConnect(handler as () => void);
+        break;
+      case 'disconnected':
+        this.onClose(() => handler());
+        break;
+      case 'error':
+        this.onError(handler as (error: Error) => void);
+        break;
+      case 'message':
+        this.onMessage(handler as (message: any) => void);
+        break;
+      default:
+        console.warn(`Unknown event: ${event}`);
+    }
+  }
+
+  /**
    * Send device registration message
    */
   private sendRegistration(): void {

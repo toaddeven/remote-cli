@@ -39,6 +39,7 @@ export interface Config {
     running?: boolean;
     startedAt?: number;
     stoppedAt?: number;
+    pid?: number;
   };
 }
 

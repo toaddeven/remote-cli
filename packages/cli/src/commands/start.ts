@@ -103,7 +103,7 @@ export async function startCommand(
     // Connect to server
     spinner.text = 'Connecting to server...';
     try {
-      await wsClient.connect(wsUrl);
+      await wsClient.connect();
     } catch (error) {
       spinner.fail('Connection failed');
       return {

@@ -119,34 +119,40 @@ export class ClaudeExecutor {
     options: ClaudeExecuteOptions
   ): Promise<ClaudeExecuteResult> {
     try {
-      const result = await query({
+      const queryInstance = query({
         prompt,
-        cwd: this.currentWorkingDirectory,
-        allowedTools: this.getAllowedTools(),
-        onStream: options.onStream ? this.createSafeStreamHandler(options.onStream) : undefined,
+        options: {
+          cwd: this.currentWorkingDirectory,
+          tools: this.getAllowedTools(),
+        }
       });
+
+      let outputText = '';
+
+      // Iterate through the query results
+      for await (const message of queryInstance) {
+        // Handle streaming output
+        if (message.type === 'assistant' && message.message.content) {
+          for (const content of message.message.content) {
+            if (content.type === 'text' && options.onStream) {
+              options.onStream(content.text);
+            }
+          }
+        }
+
+        // Collect final result
+        if (message.type === 'result' && message.subtype === 'success') {
+          outputText = message.result;
+        }
+      }
 
       return {
         success: true,
-        output: result.output,
+        output: outputText,
       };
     } catch (error) {
       throw error;
     }
-  }
-
-  /**
-   * Create safe stream output handler
-   */
-  private createSafeStreamHandler(onStream: (chunk: string) => void) {
-    return (chunk: string) => {
-      try {
-        onStream(chunk);
-      } catch (error) {
-        // Ignore errors in stream handler, don't affect main flow
-        console.error('Stream handler error:', error);
-      }
-    };
   }
 
   /**
