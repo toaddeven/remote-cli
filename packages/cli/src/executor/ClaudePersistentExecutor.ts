@@ -27,7 +27,7 @@ interface ClaudeInputMessage {
  */
 interface ClaudeOutputMessage {
   /** Message type */
-  type: 'message' | 'thinking' | 'error' | 'usage' | 'system' | 'stream_event' | 'result' | 'assistant';
+  type: 'message' | 'thinking' | 'error' | 'usage' | 'system' | 'stream_event' | 'result' | 'assistant' | 'user';
   /** Message content */
   content?: string;
   /** Whether this is a partial chunk */
@@ -527,9 +527,21 @@ export class ClaudePersistentExecutor extends EventEmitter {
           break;
 
         case 'assistant':
-          // Assistant messages contain metadata about the assistant's response
-          // Usually sent at the end of a response stream
-          console.log('[ClaudePersistent] Assistant response complete');
+          // Assistant messages contain the actual response content
+          // They can be partial (streaming) or complete
+          // partial=true: streaming chunk, partial=false or undefined: complete message
+          const isPartial = message.partial === true;
+          console.log(`[ClaudePersistent] Assistant message, partial=${isPartial}, content length=${message.content?.length || 0}`);
+          if (message.content) {
+            this.currentOutputBuffer.push(message.content);
+            if (this.currentStreamCallback) {
+              this.currentStreamCallback(message.content);
+            }
+          }
+          break;
+
+        case 'user':
+          // User messages are echo/acknowledgment of input, silently ignore
           break;
 
         default:
@@ -549,6 +561,12 @@ export class ClaudePersistentExecutor extends EventEmitter {
    * Complete the current command
    */
   private completeCurrentCommand(success: boolean, errorMessage?: string): void {
+    // Guard against double completion
+    if (!this.currentCommandResolve && !this.currentCommandReject) {
+      console.log('[ClaudePersistent] Command already completed, ignoring duplicate completion');
+      return;
+    }
+
     if (this.currentTimeoutTimer) {
       clearTimeout(this.currentTimeoutTimer);
       this.currentTimeoutTimer = undefined;

@@ -24,8 +24,8 @@ export class RouterServer {
   private connectionHub: ConnectionHub;
   private bindingManager: BindingManager;
   private cleanupInterval: NodeJS.Timeout | null = null;
-  // Track streaming messages: messageId -> { openId, feishuMessageId, buffer }
-  private streamingMessages: Map<string, { openId: string; feishuMessageId: string | null; buffer: string }> = new Map();
+  // Track streaming messages: messageId -> { openId, feishuMessageId, buffer, hasUpdated }
+  private streamingMessages: Map<string, { openId: string; feishuMessageId: string | null; buffer: string; hasUpdated: boolean }> = new Map();
 
   constructor(config: ConfigManager, store: JsonStore) {
     this.config = config;
@@ -48,7 +48,8 @@ export class RouterServer {
     this.feishuLongConnHandler.setOnStartStreaming((messageId: string, openId: string, feishuMessageId: string | null) => {
       console.log(`[RouterServer] Registering streaming session: msgId=${messageId}, feishuMsgId=${feishuMessageId}`);
       // Register this message as a streaming message so chunks and response update the same card
-      this.streamingMessages.set(messageId, { openId, feishuMessageId, buffer: '' });
+      // hasUpdated starts as false to ensure first content is immediately shown
+      this.streamingMessages.set(messageId, { openId, feishuMessageId, buffer: '', hasUpdated: false });
       console.log(`[RouterServer] Total streaming sessions: ${this.streamingMessages.size}`);
     });
 
@@ -317,6 +318,11 @@ export class RouterServer {
     console.log(`\n✅ Ready to receive connections from local clients\n`);
   }
 
+  // Track last update time for each streaming message to enable time-based updates
+  private lastStreamUpdateTime: Map<string, number> = new Map();
+  private readonly STREAM_UPDATE_INTERVAL_MS = 500; // Update at least every 500ms
+  private readonly STREAM_UPDATE_MIN_LENGTH = 10;   // Update every 10 characters
+
   /**
    * Handle streaming chunk from device
    */
@@ -335,12 +341,31 @@ export class RouterServer {
     // Accumulate chunk
     streamData.buffer += chunk;
 
-    // Update message every 50 characters
-    if (streamData.feishuMessageId && streamData.buffer.length % 50 === 0) {
+    // Determine if we should update the card now
+    const now = Date.now();
+    const lastUpdate = this.lastStreamUpdateTime.get(messageId) || 0;
+    const timeSinceLastUpdate = now - lastUpdate;
+    const bufferLength = streamData.buffer.length;
+
+    // Update if:
+    // 1. We have a feishuMessageId
+    // 2. Either:
+    //    a. It's the first content (hasUpdated is false) - show immediately
+    //    b. We've accumulated enough characters since last update
+    //    c. Enough time has passed since last update
+    const shouldUpdate = streamData.feishuMessageId && (
+      !streamData.hasUpdated || // First content - always show immediately
+      (bufferLength % this.STREAM_UPDATE_MIN_LENGTH === 0) || // Every N characters
+      (timeSinceLastUpdate >= this.STREAM_UPDATE_INTERVAL_MS) // Time-based
+    );
+
+    if (shouldUpdate && streamData.feishuMessageId) {
       await this.feishuLongConnHandler.updateStreamingMessage(
         streamData.feishuMessageId,
         streamData.buffer
       );
+      this.lastStreamUpdateTime.set(messageId, now);
+      streamData.hasUpdated = true; // Mark as updated
     }
   }
 
@@ -355,9 +380,12 @@ export class RouterServer {
 
     if (feishuMessageId) {
       if (success) {
+        // Use accumulated buffer if available, otherwise fall back to output parameter
+        // Buffer contains all streamed content, which is more accurate for long-running tasks
+        const finalContent = streamData.buffer || output || '✅ Completed';
         await this.feishuLongConnHandler.finalizeStreamingMessage(
           feishuMessageId,
-          output || '✅ Completed',
+          finalContent,
           sessionAbbr
         );
       } else {
@@ -371,6 +399,7 @@ export class RouterServer {
 
     // Clean up
     this.streamingMessages.delete(messageId);
+    this.lastStreamUpdateTime.delete(messageId);
   }
 
   /**
