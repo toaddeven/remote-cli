@@ -223,6 +223,11 @@ export class RouterServer {
               }
               break;
 
+            case 'stream':
+              // Stream chunks are sent during execution, ignore them
+              // Final result will be sent via RESPONSE message
+              break;
+
             default:
               console.log('Unknown message type:', message.type);
           }
