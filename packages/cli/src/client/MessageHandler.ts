@@ -92,8 +92,6 @@ export class MessageHandler {
 
     // Check if there is a task currently executing
     if (this.isExecuting) {
-      // Send a stream chunk first so the server knows to update the card
-      this.sendStreamChunk(messageId, '❌ ');
       this.sendResponse(messageId, {
         success: false,
         error: 'Executor is busy, please wait for current task to complete',
