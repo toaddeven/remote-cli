@@ -1,6 +1,7 @@
 import { ConfigManager } from '../config/ConfigManager';
 import { JsonStore } from '../storage/JsonStore';
 import { RouterServer } from '../server';
+import { PidManager } from '../utils/PidManager';
 
 /**
  * Start the router server
@@ -8,6 +9,17 @@ import { RouterServer } from '../server';
 export async function startCommand(): Promise<void> {
   try {
     console.log('\n🚀 Starting remote CLI router server...\n');
+
+    // Check if server is already running
+    const pidManager = new PidManager();
+    const runningPid = await pidManager.getRunningPid();
+    if (runningPid) {
+      console.error(`❌ Router server is already running (PID: ${runningPid})`);
+      console.error('\nUse one of these commands:');
+      console.error('  remote-cli-router stop    - Stop the server');
+      console.error('  remote-cli-router status  - Check server status\n');
+      process.exit(1);
+    }
 
     // Load configuration
     const config = await ConfigManager.initialize();
@@ -23,6 +35,9 @@ export async function startCommand(): Promise<void> {
       process.exit(1);
     }
 
+    // Write PID file
+    await pidManager.writePid(process.pid);
+
     // Initialize storage
     const store = new JsonStore();
     await store.initialize();
@@ -36,9 +51,11 @@ export async function startCommand(): Promise<void> {
       console.log(`\n\nReceived ${signal}, shutting down gracefully...`);
       try {
         await server.stop();
+        await pidManager.removePid();
         process.exit(0);
       } catch (error) {
         console.error('Error during shutdown:', error);
+        await pidManager.removePid();
         process.exit(1);
       }
     };

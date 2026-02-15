@@ -83,7 +83,30 @@ remote-cli-router config reset
 remote-cli-router start
 ```
 
-Press Ctrl+C to stop.
+Press Ctrl+C to stop, or use `remote-cli-router stop` from another terminal.
+
+## Managing the Server
+
+### Check Server Status
+
+```bash
+remote-cli-router status
+```
+
+Shows:
+- Running status (running/not running)
+- Process ID (PID)
+- Server configuration (host, port)
+- Connected devices count
+- Uptime
+
+### Stop the Server
+
+```bash
+remote-cli-router stop
+```
+
+Gracefully stops the running server. If the process doesn't stop within 10 seconds, it will be forcefully terminated.
 
 ### Background (recommended for production)
 
@@ -248,12 +271,41 @@ Each device:
 
 ### Server won't start
 
-Check configuration:
+1. Check if server is already running:
+```bash
+remote-cli-router status
+```
+
+2. Check configuration:
 ```bash
 remote-cli-router config show
 ```
 
 Ensure App ID and App Secret are set.
+
+3. Check if port is already in use:
+```bash
+lsof -i :3000  # or your configured port
+```
+
+### Cannot stop server
+
+If `remote-cli-router stop` fails:
+
+1. Find the process manually:
+```bash
+ps aux | grep remote-cli-router
+```
+
+2. Kill the process:
+```bash
+kill -TERM <PID>  # Or kill -9 <PID> if TERM doesn't work
+```
+
+3. Clean up stale PID file:
+```bash
+rm ~/.remote-cli-router/server.pid
+```
 
 ### Feishu webhook not working
 
@@ -264,10 +316,14 @@ Ensure App ID and App Secret are set.
 
 ### Devices not connecting
 
-1. Check WebSocket endpoint is accessible: `ws://your-domain:port/ws`
-2. Verify firewall allows WebSocket connections
-3. Check device logs for connection errors
-4. Ensure server is running: `remote-cli-router status` (when implemented)
+1. Check if server is running:
+```bash
+remote-cli-router status
+```
+
+2. Check WebSocket endpoint is accessible: `ws://your-domain:port/ws`
+3. Verify firewall allows WebSocket connections
+4. Check device logs for connection errors
 
 ### Messages not routing
 
@@ -329,4 +385,5 @@ See [README.md](../../README.md) section "Router Server Deployment" for:
 
 - **Config**: `~/.remote-cli-router/config.json`
 - **Bindings**: `~/.remote-cli-router/bindings.json`
+- **PID File**: `~/.remote-cli-router/server.pid` (only when server is running)
 - **Logs**: PM2 logs or stdout when running in foreground

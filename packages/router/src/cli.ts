@@ -2,6 +2,8 @@
 import { Command } from 'commander';
 import { registerConfigCommands } from './commands/config';
 import { startCommand } from './commands/start';
+import { stopCommand } from './commands/stop';
+import { statusCommand } from './commands/status';
 
 const program = new Command();
 
@@ -19,22 +21,16 @@ program
   .description('Start the router server')
   .action(startCommand);
 
-// Stop command (to be implemented with PM2 or similar)
+// Stop command
 program
   .command('stop')
   .description('Stop the router server')
-  .action(() => {
-    console.log('Stopping router server...');
-    console.log('(Implementation pending - use Ctrl+C for now)');
-  });
+  .action(stopCommand);
 
-// Status command (to be implemented)
+// Status command
 program
   .command('status')
   .description('Show router server status')
-  .action(() => {
-    console.log('Router server status:');
-    console.log('(Implementation pending)');
-  });
+  .action(statusCommand);
 
 program.parse();
