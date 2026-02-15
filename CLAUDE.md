@@ -15,6 +15,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **strictly enforced** rule - any pull request containing Chinese text will be rejected.
 
+### Communication vs Code
+
+- **During conversation**: You may communicate in any language (Chinese, English, etc.)
+- **Code submissions**: All code, comments, documentation, and commit messages MUST be in English
+- **Consistency**: Maintain the same language within a conversation context for better understanding
+
 ## Testing Requirement
 
 **CRITICAL: All code changes MUST include corresponding test coverage.**
