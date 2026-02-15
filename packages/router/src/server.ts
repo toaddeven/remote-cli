@@ -389,10 +389,14 @@ export class RouterServer {
           sessionAbbr
         );
       } else {
-        // Replace with error message
-        await this.feishuLongConnHandler.sendMessage(
-          openId,
-          `❌ Command failed:\n${error || 'Unknown error'}`
+        // Update card with error message
+        const errorContent = streamData.buffer
+          ? `${streamData.buffer}\n\n❌ Error: ${error || 'Command failed'}`
+          : `❌ Command failed:\n${error || 'Unknown error'}`;
+        await this.feishuLongConnHandler.finalizeStreamingMessage(
+          feishuMessageId,
+          errorContent,
+          undefined
         );
       }
     }
