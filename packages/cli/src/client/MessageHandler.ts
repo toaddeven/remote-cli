@@ -64,6 +64,10 @@ export class MessageHandler {
         await this.handleCommandMessage(message as IncomingMessage);
         return;
 
+      case 'heartbeat':
+        // Silently ignore heartbeat responses from server
+        return;
+
       default:
         this.sendResponse(message.messageId!, {
           success: false,
