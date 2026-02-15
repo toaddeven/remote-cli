@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import { DirectoryGuard } from '../security/DirectoryGuard';
+import { claudeCodeHooks } from '../hooks/ClaudeCodeHooks';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -139,6 +140,16 @@ export class ClaudePersistentExecutor extends EventEmitter {
   private currentCommandResolve?: (result: PersistentClaudeResult) => void;
   private currentCommandReject?: (error: Error) => void;
   private currentTimeoutTimer?: NodeJS.Timeout;
+
+  // Current task context for hooks
+  private currentTaskId: string | null = null;
+  private currentTaskStartTime: number = 0;
+
+  // Interactive input handling
+  private isWaitingForInput = false;
+  private inputRequestCallbacks: Array<(input: string) => void> = [];
+  private inputDetectionTimer?: NodeJS.Timeout;
+  private lastOutputTime = 0;
 
   constructor(directoryGuard: DirectoryGuard) {
     super();
@@ -544,6 +555,9 @@ export class ClaudePersistentExecutor extends EventEmitter {
             if (this.currentStreamCallback) {
               this.currentStreamCallback(message.content);
             }
+
+            // Start input detection timer after receiving content
+            this.startInputDetectionTimer(message.content);
           }
           break;
 
@@ -565,6 +579,149 @@ export class ClaudePersistentExecutor extends EventEmitter {
   }
 
   /**
+   * Start a timer to detect if user input is requested
+   * If no new output arrives within the timeout, check if the last output contains input request patterns
+   */
+  private startInputDetectionTimer(content: string): void {
+    // Clear any existing timer
+    if (this.inputDetectionTimer) {
+      clearTimeout(this.inputDetectionTimer);
+    }
+
+    this.lastOutputTime = Date.now();
+
+    // Set a timer to check for input request after a short delay
+    this.inputDetectionTimer = setTimeout(() => {
+      if (this.isWaitingForInput || !this.isProcessing) {
+        return;
+      }
+
+      const output = this.currentOutputBuffer.join('');
+      if (this.isInputRequest(output)) {
+        console.log('[ClaudePersistent] Detected input request in output');
+        this.handleInputRequest(output);
+      }
+    }, 2000); // 2 second delay to wait for more output
+  }
+
+  /**
+   * Handle input request by notifying user and waiting for response
+   */
+  private async handleInputRequest(output: string): Promise<void> {
+    // Extract the last line or prompt from output
+    const lines = output.trim().split('\n');
+    const lastLine = lines[lines.length - 1] || 'Please provide your response';
+
+    // Pause processing state
+    this.isWaitingForInput = true;
+
+    // Notify through hooks
+    const userInput = await this.requestInteractiveInput(lastLine);
+
+    if (userInput !== null) {
+      this.sendInput(userInput);
+    } else {
+      // User cancelled or timed out
+      console.log('[ClaudePersistent] Input request cancelled or timed out');
+      this.isWaitingForInput = false;
+    }
+  }
+
+  /**
+   * Check if the output indicates a request for user input
+   * This detects patterns like "Press Enter to continue", "(y/n)", etc.
+   */
+  private isInputRequest(output: string): boolean {
+    const inputPatterns = [
+      /\(y\/n\?*\)/i,                    // (y/n) or (y/n?)
+      /\[y\/n\]/i,                       // [y/n]
+      /press enter to continue/i,       // Press Enter to continue
+      /type 'yes' to continue/i,        // Type 'yes' to continue
+      /waiting for your (response|input)/i, // Waiting for response/input
+      /please confirm/i,                // Please confirm
+      /do you want to/i,                // Do you want to...
+      /would you like to/i,             // Would you like to...
+      />\s*$/,                          // Prompt ending with >
+      /:\s*$/,                          // Prompt ending with :
+    ];
+
+    return inputPatterns.some(pattern => pattern.test(output));
+  }
+
+  /**
+   * Request user input through hooks
+   * Returns a promise that resolves when user provides input via sendInput()
+   */
+  private async requestInteractiveInput(prompt: string): Promise<string | null> {
+    console.log('[ClaudePersistent] Requesting interactive input:', prompt);
+    this.isWaitingForInput = true;
+
+    // Emit hook to notify user (fire and forget)
+    claudeCodeHooks.requestUserInput({
+      prompt,
+      type: 'text',
+      timeout: 300000, // 5 minutes timeout for input
+    }).catch(() => {
+      // Ignore errors from notification
+    });
+
+    // Wait for input via sendInput() or timeout
+    return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        console.log('[ClaudePersistent] Input request timed out');
+        this.isWaitingForInput = false;
+        resolve(null);
+      }, 300000); // 5 minutes timeout
+
+      // Store callback to be called when sendInput is invoked
+      this.inputRequestCallbacks.push((input: string) => {
+        clearTimeout(timeoutId);
+        resolve(input);
+      });
+    });
+  }
+
+  /**
+   * Send user input to the Claude process
+   * This is called by MessageHandler when user sends a message while waiting for input
+   */
+  sendInput(input: string): boolean {
+    if (!this.claudeProcess || !this.isWaitingForInput) {
+      console.log('[ClaudePersistent] Cannot send input - process not running or not waiting for input');
+      return false;
+    }
+
+    const inputMessage: ClaudeInputMessage = {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: input,
+      },
+    };
+
+    const inputLine = JSON.stringify(inputMessage);
+    console.log(`[ClaudePersistent] Sending user input: ${input}`);
+
+    this.claudeProcess.stdin?.write(inputLine + '\n');
+    this.isWaitingForInput = false;
+
+    // Notify any waiting callbacks (for requestInteractiveInput)
+    for (const callback of this.inputRequestCallbacks) {
+      callback(input);
+    }
+    this.inputRequestCallbacks = [];
+
+    return true;
+  }
+
+  /**
+   * Check if currently waiting for user input
+   */
+  isWaitingInput(): boolean {
+    return this.isWaitingForInput;
+  }
+
+  /**
    * Complete the current command
    */
   private completeCurrentCommand(success: boolean, errorMessage?: string): void {
@@ -581,6 +738,41 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
     const output = this.currentOutputBuffer.join('');
     console.log(`[ClaudePersistent] Completing command, success=${success}, output length=${output.length}, output preview: ${output.substring(0, 100)}...`);
+
+    // Emit task completion hooks
+    if (this.currentTaskId) {
+      const endTime = Date.now();
+      const duration = endTime - this.currentTaskStartTime;
+
+      if (success) {
+        claudeCodeHooks.notifyTaskCompleted(
+          {
+            taskId: this.currentTaskId,
+            description: '', // Will be populated from queue if needed
+            workingDirectory: this.currentWorkingDirectory,
+            sessionId: this.sessionId || undefined,
+            startTime: this.currentTaskStartTime,
+          },
+          {
+            success: true,
+            output: output.trim(),
+            endTime,
+            duration,
+          }
+        );
+      } else {
+        claudeCodeHooks.notifyTaskFailed(
+          {
+            taskId: this.currentTaskId,
+            description: '',
+            workingDirectory: this.currentWorkingDirectory,
+            sessionId: this.sessionId || undefined,
+            startTime: this.currentTaskStartTime,
+          },
+          new Error(errorMessage || 'Command failed')
+        );
+      }
+    }
 
     if (success && this.currentCommandResolve) {
       // Get session abbreviation (last 8 characters of session ID)
@@ -613,6 +805,12 @@ export class ClaudePersistentExecutor extends EventEmitter {
       clearTimeout(this.currentTimeoutTimer);
       this.currentTimeoutTimer = undefined;
     }
+    if (this.inputDetectionTimer) {
+      clearTimeout(this.inputDetectionTimer);
+      this.inputDetectionTimer = undefined;
+    }
+    this.isWaitingForInput = false;
+    // Note: currentTaskId and currentTaskStartTime are cleared separately after hooks
   }
 
   /**
@@ -638,6 +836,19 @@ export class ClaudePersistentExecutor extends EventEmitter {
     this.currentStreamCallback = command.options.onStream;
     this.currentCommandResolve = command.resolve;
     this.currentCommandReject = command.reject;
+
+    // Generate task ID and track start time for hooks
+    this.currentTaskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    this.currentTaskStartTime = Date.now();
+
+    // Emit task started hook
+    claudeCodeHooks.notifyTaskStarted({
+      taskId: this.currentTaskId,
+      description: command.prompt,
+      workingDirectory: this.currentWorkingDirectory,
+      sessionId: this.sessionId || undefined,
+      startTime: this.currentTaskStartTime,
+    });
 
     // Set timeout
     const timeout = command.options.timeout || this.defaultTimeout;
@@ -705,12 +916,36 @@ export class ClaudePersistentExecutor extends EventEmitter {
    * Stops the current process and rejects the pending command
    */
   async abort(): Promise<boolean> {
-    if (!this.isProcessing) {
+    if (!this.isProcessing && !this.isWaitingForInput) {
       console.log('[ClaudePersistent] No command is currently executing');
       return false;
     }
 
+    // If waiting for input, cancel the input request
+    if (this.isWaitingForInput) {
+      console.log('[ClaudePersistent] Cancelling input request...');
+      this.isWaitingForInput = false;
+      if (this.inputDetectionTimer) {
+        clearTimeout(this.inputDetectionTimer);
+        this.inputDetectionTimer = undefined;
+      }
+    }
+
     console.log('[ClaudePersistent] Aborting current command...');
+
+    // Emit task aborted hook before stopping
+    if (this.currentTaskId) {
+      claudeCodeHooks.notifyTaskAborted(
+        {
+          taskId: this.currentTaskId,
+          description: '',
+          workingDirectory: this.currentWorkingDirectory,
+          sessionId: this.sessionId || undefined,
+          startTime: this.currentTaskStartTime,
+        },
+        'Command aborted by user via /abort'
+      );
+    }
 
     // Mark as intentional stop before rejecting and stopping
     this.isStopping = true;
@@ -723,6 +958,8 @@ export class ClaudePersistentExecutor extends EventEmitter {
     // Reset command state
     this.resetCurrentCommand();
     this.isProcessing = false;
+    this.currentTaskId = null;
+    this.currentTaskStartTime = 0;
 
     // Stop the process to ensure clean state
     await this.stopProcess();

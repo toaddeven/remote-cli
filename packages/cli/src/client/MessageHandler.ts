@@ -2,6 +2,7 @@ import { WebSocketClient } from './WebSocketClient';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import { IncomingMessage, OutgoingMessage } from '../types';
 import type { ClaudeExecutor, ClaudePersistentExecutor } from '../executor';
+import { FeishuNotificationAdapter } from '../hooks';
 import { spawn } from 'child_process';
 
 /**
@@ -25,6 +26,7 @@ export class MessageHandler {
   private isDestroyed = false;
   private isExecuting = false;
   private currentOpenId?: string;
+  private notificationAdapter: FeishuNotificationAdapter;
 
   constructor(
     wsClient: WebSocketClient,
@@ -34,6 +36,10 @@ export class MessageHandler {
     this.wsClient = wsClient;
     this.executor = executor;
     this.directoryGuard = directoryGuard;
+
+    // Initialize Feishu notification adapter
+    this.notificationAdapter = new FeishuNotificationAdapter(wsClient);
+    this.notificationAdapter.register();
   }
 
   /**
@@ -87,13 +93,42 @@ export class MessageHandler {
   private async handleCommandMessage(message: IncomingMessage): Promise<void> {
     const { messageId, content, workingDirectory, openId, isSlashCommand } = message;
 
-    // Store openId for response routing
+    // Store openId for response routing and notifications
     this.currentOpenId = openId;
+    this.notificationAdapter.setCurrentOpenId(openId);
 
     // Handle /abort command first, even when busy
     if (content?.trim() === '/abort') {
       await this.handleAbortCommand(messageId);
       return;
+    }
+
+    // Check if executor is waiting for interactive input
+    if ('isWaitingInput' in this.executor && typeof this.executor.isWaitingInput === 'function') {
+      const executor = this.executor as { isWaitingInput(): boolean; sendInput(input: string): boolean };
+      if (executor.isWaitingInput()) {
+        const input = content?.trim();
+        if (input) {
+          const sent = executor.sendInput(input);
+          if (sent) {
+            this.sendResponse(messageId, {
+              success: true,
+              output: `✅ Sent: "${input}"`,
+            });
+          } else {
+            this.sendResponse(messageId, {
+              success: false,
+              error: '❌ Failed to send input - executor is no longer waiting',
+            });
+          }
+        } else {
+          this.sendResponse(messageId, {
+            success: false,
+            error: '❌ Please provide a non-empty input',
+          });
+        }
+        return;
+      }
     }
 
     // Check if there is a task currently executing
@@ -246,6 +281,9 @@ export class MessageHandler {
 - /cd <directory> - Change working directory
 - /r or /resume - Resume previous conversation
 - /c or /continue - Continue previous conversation
+- /review - Review changes (supports remote interaction)
+
+💡 Interactive commands like /review will prompt you for input via Feishu when needed.
 
 You can also use natural language commands to control Claude Code CLI.`,
       });
@@ -452,5 +490,6 @@ You can also use natural language commands to control Claude Code CLI.`,
   destroy(): void {
     this.isDestroyed = true;
     this.isExecuting = false;
+    this.notificationAdapter.unregister();
   }
 }

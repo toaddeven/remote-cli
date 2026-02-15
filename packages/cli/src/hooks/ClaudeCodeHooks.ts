@@ -1,0 +1,488 @@
+import { EventEmitter } from 'events';
+
+/**
+ * Hook event types
+ */
+export enum HookEventType {
+  // Authorization hooks
+  AUTHORIZATION_REQUIRED = 'authorization:required',
+  AUTHORIZATION_GRANTED = 'authorization:granted',
+  AUTHORIZATION_DENIED = 'authorization:denied',
+
+  // Task lifecycle hooks
+  TASK_STARTED = 'task:started',
+  TASK_COMPLETED = 'task:completed',
+  TASK_FAILED = 'task:failed',
+  TASK_ABORTED = 'task:aborted',
+
+  // Execution hooks
+  TOOL_BEFORE_EXECUTION = 'tool:beforeExecution',
+  TOOL_AFTER_EXECUTION = 'tool:afterExecution',
+  PROGRESS_UPDATE = 'progress:update',
+
+  // User interaction hooks
+  USER_INPUT_REQUIRED = 'user:inputRequired',
+  CONFIRMATION_REQUIRED = 'user:confirmationRequired',
+}
+
+/**
+ * Authorization context
+ */
+export interface AuthorizationContext {
+  /** Type of action requiring authorization */
+  actionType: 'file_access' | 'command_execution' | 'network_request' | 'sensitive_operation';
+  /** Description of what is being requested */
+  description: string;
+  /** Detailed information about the operation */
+  details: {
+    /** File path (for file_access) */
+    filePath?: string;
+    /** Command to execute (for command_execution) */
+    command?: string;
+    /** Working directory */
+    cwd?: string;
+    /** Additional metadata */
+    [key: string]: unknown;
+  };
+  /** Risk level of the operation */
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  /** Timestamp when authorization was requested */
+  timestamp: number;
+}
+
+/**
+ * Authorization decision
+ */
+export interface AuthorizationDecision {
+  /** Whether the operation is granted */
+  granted: boolean;
+  /** Optional reason for denial */
+  reason?: string;
+  /** Whether to remember this decision for future similar operations */
+  remember?: boolean;
+  /** Duration to remember (in milliseconds), 0 = session only */
+  rememberDuration?: number;
+}
+
+/**
+ * Task context
+ */
+export interface TaskContext {
+  /** Unique task ID */
+  taskId: string;
+  /** Task description/prompt */
+  description: string;
+  /** Working directory */
+  workingDirectory: string;
+  /** Session ID */
+  sessionId?: string;
+  /** Start timestamp */
+  startTime: number;
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Task result
+ */
+export interface TaskResult {
+  /** Whether the task succeeded */
+  success: boolean;
+  /** Task output */
+  output?: string;
+  /** Error message if failed */
+  error?: string;
+  /** Execution duration in milliseconds */
+  duration?: number;
+  /** End timestamp */
+  endTime: number;
+}
+
+/**
+ * Tool execution context
+ */
+export interface ToolExecutionContext {
+  /** Tool name */
+  toolName: string;
+  /** Tool parameters */
+  params: Record<string, unknown>;
+  /** Execution timestamp */
+  timestamp: number;
+  /** Task ID associated with this execution */
+  taskId?: string;
+}
+
+/**
+ * Tool execution result
+ */
+export interface ToolExecutionResult {
+  /** Whether execution succeeded */
+  success: boolean;
+  /** Execution result */
+  result?: unknown;
+  /** Error if failed */
+  error?: string;
+  /** Execution duration in milliseconds */
+  duration: number;
+}
+
+/**
+ * Progress update
+ */
+export interface ProgressUpdate {
+  /** Current progress (0-100) */
+  progress: number;
+  /** Progress message */
+  message: string;
+  /** Current step number */
+  step?: number;
+  /** Total steps */
+  totalSteps?: number;
+  /** Additional data */
+  data?: Record<string, unknown>;
+}
+
+/**
+ * Confirmation request
+ */
+export interface ConfirmationRequest {
+  /** What needs confirmation */
+  prompt: string;
+  /** Detailed description */
+  description?: string;
+  /** Default option */
+  defaultValue?: boolean;
+  /** Timeout in milliseconds (0 = no timeout) */
+  timeout?: number;
+}
+
+/**
+ * User input request
+ */
+export interface UserInputRequest {
+  /** Prompt message */
+  prompt: string;
+  /** Input type */
+  type: 'text' | 'password' | 'number' | 'choice';
+  /** Choices (for type='choice') */
+  choices?: string[];
+  /** Default value */
+  defaultValue?: string;
+  /** Validation pattern */
+  validation?: RegExp;
+  /** Timeout in milliseconds (0 = no timeout) */
+  timeout?: number;
+}
+
+/**
+ * Hook handler types
+ */
+export type AuthorizationHandler = (
+  context: AuthorizationContext
+) => Promise<AuthorizationDecision> | AuthorizationDecision;
+
+export type TaskStartedHandler = (context: TaskContext) => Promise<void> | void;
+export type TaskCompletedHandler = (context: TaskContext, result: TaskResult) => Promise<void> | void;
+export type TaskFailedHandler = (context: TaskContext, error: Error) => Promise<void> | void;
+export type TaskAbortedHandler = (context: TaskContext, reason: string) => Promise<void> | void;
+
+export type ToolBeforeExecutionHandler = (
+  context: ToolExecutionContext
+) => Promise<boolean | void> | boolean | void;
+export type ToolAfterExecutionHandler = (
+  context: ToolExecutionContext,
+  result: ToolExecutionResult
+) => Promise<void> | void;
+
+export type ProgressHandler = (update: ProgressUpdate) => Promise<void> | void;
+
+export type ConfirmationHandler = (
+  request: ConfirmationRequest
+) => Promise<boolean> | boolean;
+export type UserInputHandler = (
+  request: UserInputRequest
+) => Promise<string> | string;
+
+/**
+ * Claude Code Hooks Manager
+ *
+ * Provides a centralized hook system for customizing Claude Code behavior
+ * and receiving notifications at key decision points.
+ */
+export class ClaudeCodeHooks extends EventEmitter {
+  private authorizationHandler?: AuthorizationHandler;
+  private confirmationHandler?: ConfirmationHandler;
+  private userInputHandler?: UserInputHandler;
+
+  // Stored authorization decisions for caching
+  private authorizationCache = new Map<string, { decision: AuthorizationDecision; expiresAt: number }>();
+
+  constructor() {
+    super();
+    // Increase max listeners to support multiple adapter instances in tests
+    this.setMaxListeners(100);
+  }
+
+  /**
+   * Register authorization handler
+   * Called when an operation requires user authorization
+   */
+  onAuthorizationRequired(handler: AuthorizationHandler): void {
+    this.authorizationHandler = handler;
+  }
+
+  /**
+   * Register task started handler
+   */
+  onTaskStarted(handler: TaskStartedHandler): void {
+    this.on(HookEventType.TASK_STARTED, handler);
+  }
+
+  /**
+   * Register task completed handler
+   */
+  onTaskCompleted(handler: TaskCompletedHandler): void {
+    this.on(HookEventType.TASK_COMPLETED, handler);
+  }
+
+  /**
+   * Register task failed handler
+   */
+  onTaskFailed(handler: TaskFailedHandler): void {
+    this.on(HookEventType.TASK_FAILED, handler);
+  }
+
+  /**
+   * Register task aborted handler
+   */
+  onTaskAborted(handler: TaskAbortedHandler): void {
+    this.on(HookEventType.TASK_ABORTED, handler);
+  }
+
+  /**
+   * Register tool before execution handler
+   * Return false to prevent execution
+   */
+  onToolBeforeExecution(handler: ToolBeforeExecutionHandler): void {
+    this.on(HookEventType.TOOL_BEFORE_EXECUTION, handler);
+  }
+
+  /**
+   * Register tool after execution handler
+   */
+  onToolAfterExecution(handler: ToolAfterExecutionHandler): void {
+    this.on(HookEventType.TOOL_AFTER_EXECUTION, handler);
+  }
+
+  /**
+   * Register progress handler
+   */
+  onProgress(handler: ProgressHandler): void {
+    this.on(HookEventType.PROGRESS_UPDATE, handler);
+  }
+
+  /**
+   * Register confirmation handler
+   */
+  onConfirmationRequired(handler: ConfirmationHandler): void {
+    this.confirmationHandler = handler;
+  }
+
+  /**
+   * Register user input handler
+   */
+  onUserInputRequired(handler: UserInputHandler): void {
+    this.userInputHandler = handler;
+  }
+
+  /**
+   * Request authorization for an operation
+   */
+  async requestAuthorization(context: AuthorizationContext): Promise<AuthorizationDecision> {
+    // Check cache first
+    const cacheKey = this.getAuthorizationCacheKey(context);
+    const cached = this.authorizationCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      this.emit(HookEventType.AUTHORIZATION_GRANTED, context, cached.decision);
+      return cached.decision;
+    }
+
+    // No handler registered, default to deny for safety
+    if (!this.authorizationHandler) {
+      const denyDecision: AuthorizationDecision = {
+        granted: false,
+        reason: 'No authorization handler registered',
+      };
+      this.emit(HookEventType.AUTHORIZATION_DENIED, context, denyDecision);
+      return denyDecision;
+    }
+
+    try {
+      const decision = await this.authorizationHandler(context);
+
+      // Emit event
+      if (decision.granted) {
+        this.emit(HookEventType.AUTHORIZATION_GRANTED, context, decision);
+      } else {
+        this.emit(HookEventType.AUTHORIZATION_DENIED, context, decision);
+      }
+
+      // Cache decision if requested
+      if (decision.remember && decision.granted) {
+        const duration = decision.rememberDuration || 0;
+        this.authorizationCache.set(cacheKey, {
+          decision,
+          expiresAt: duration > 0 ? Date.now() + duration : Number.MAX_SAFE_INTEGER,
+        });
+      }
+
+      return decision;
+    } catch (error) {
+      // Handler threw error, deny for safety
+      const denyDecision: AuthorizationDecision = {
+        granted: false,
+        reason: `Authorization handler error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+      this.emit(HookEventType.AUTHORIZATION_DENIED, context, denyDecision);
+      return denyDecision;
+    }
+  }
+
+  /**
+   * Notify task started
+   */
+  async notifyTaskStarted(context: TaskContext): Promise<void> {
+    this.emit(HookEventType.TASK_STARTED, context);
+  }
+
+  /**
+   * Notify task completed
+   */
+  async notifyTaskCompleted(context: TaskContext, result: TaskResult): Promise<void> {
+    this.emit(HookEventType.TASK_COMPLETED, context, result);
+  }
+
+  /**
+   * Notify task failed
+   */
+  async notifyTaskFailed(context: TaskContext, error: Error): Promise<void> {
+    this.emit(HookEventType.TASK_FAILED, context, error);
+  }
+
+  /**
+   * Notify task aborted
+   */
+  async notifyTaskAborted(context: TaskContext, reason: string): Promise<void> {
+    this.emit(HookEventType.TASK_ABORTED, context, reason);
+  }
+
+  /**
+   * Check if tool execution is allowed
+   * Returns false to prevent execution
+   */
+  async checkToolExecution(context: ToolExecutionContext): Promise<boolean> {
+    const handlers = this.listeners(HookEventType.TOOL_BEFORE_EXECUTION) as ToolBeforeExecutionHandler[];
+
+    for (const handler of handlers) {
+      try {
+        const result = await handler(context);
+        // If any handler returns false, prevent execution
+        if (result === false) {
+          return false;
+        }
+      } catch (error) {
+        // Handler error, log but continue
+        console.error('[ClaudeCodeHooks] Tool before execution handler error:', error);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Notify tool after execution
+   */
+  async notifyToolExecuted(context: ToolExecutionContext, result: ToolExecutionResult): Promise<void> {
+    this.emit(HookEventType.TOOL_AFTER_EXECUTION, context, result);
+  }
+
+  /**
+   * Update progress
+   */
+  async updateProgress(update: ProgressUpdate): Promise<void> {
+    this.emit(HookEventType.PROGRESS_UPDATE, update);
+  }
+
+  /**
+   * Request user confirmation
+   */
+  async requestConfirmation(request: ConfirmationRequest): Promise<boolean> {
+    if (!this.confirmationHandler) {
+      // Default to false if no handler
+      return false;
+    }
+
+    try {
+      return await this.confirmationHandler(request);
+    } catch (error) {
+      console.error('[ClaudeCodeHooks] Confirmation handler error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Request user input
+   */
+  async requestUserInput(request: UserInputRequest): Promise<string | null> {
+    if (!this.userInputHandler) {
+      // Default to null if no handler
+      return null;
+    }
+
+    try {
+      return await this.userInputHandler(request);
+    } catch (error) {
+      console.error('[ClaudeCodeHooks] User input handler error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear authorization cache
+   */
+  clearAuthorizationCache(): void {
+    this.authorizationCache.clear();
+  }
+
+  /**
+   * Remove all handlers
+   */
+  removeAllHandlers(): void {
+    this.authorizationHandler = undefined;
+    this.confirmationHandler = undefined;
+    this.userInputHandler = undefined;
+    this.authorizationCache.clear();
+    this.removeAllListeners();
+  }
+
+  /**
+   * Generate cache key for authorization
+   */
+  private getAuthorizationCacheKey(context: AuthorizationContext): string {
+    // Create a key based on action type and relevant details
+    const parts: string[] = [context.actionType];
+
+    if (context.details.filePath) {
+      parts.push(context.details.filePath);
+    }
+    if (context.details.command) {
+      // Normalize command by removing arguments for broader matching
+      parts.push(context.details.command.split(' ')[0]);
+    }
+
+    return parts.join(':');
+  }
+}
+
+// Export singleton instance
+export const claudeCodeHooks = new ClaudeCodeHooks();
