@@ -24,6 +24,8 @@ export class RouterServer {
   private connectionHub: ConnectionHub;
   private bindingManager: BindingManager;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  // Track streaming messages: messageId -> { openId, feishuMessageId, buffer }
+  private streamingMessages: Map<string, { openId: string; feishuMessageId: string | null; buffer: string }> = new Map();
 
   constructor(config: ConfigManager, store: JsonStore) {
     this.config = config;
@@ -205,27 +207,41 @@ export class RouterServer {
             case MessageType.RESPONSE:
               // Device sends response to command - forward to Feishu via long connection
               const responseOpenId = message.openId || message.data?.openId;
-              if (responseOpenId) {
-                const output = message.output || message.data?.output;
-                const success = message.success ?? message.data?.success;
-                const errorMsg = message.error || message.data?.error;
-                if (success) {
-                  await this.feishuLongConnHandler.sendMessage(
-                    responseOpenId,
-                    output || '✅ Command completed successfully'
+              const responseMessageId = message.messageId;
+              if (responseMessageId && responseOpenId) {
+                // Check if this was a streaming message
+                if (this.streamingMessages.has(responseMessageId)) {
+                  await this.finalizeStreamingMessage(
+                    responseMessageId,
+                    message.success ?? message.data?.success,
+                    message.output || message.data?.output,
+                    message.error || message.data?.error
                   );
                 } else {
-                  await this.feishuLongConnHandler.sendMessage(
-                    responseOpenId,
-                    `❌ Command failed:\n${errorMsg || 'Unknown error'}`
-                  );
+                  // Non-streaming message, send directly
+                  const output = message.output || message.data?.output;
+                  const success = message.success ?? message.data?.success;
+                  const errorMsg = message.error || message.data?.error;
+                  if (success) {
+                    await this.feishuLongConnHandler.sendMessage(
+                      responseOpenId,
+                      output || '✅ Command completed successfully'
+                    );
+                  } else {
+                    await this.feishuLongConnHandler.sendMessage(
+                      responseOpenId,
+                      `❌ Command failed:\n${errorMsg || 'Unknown error'}`
+                    );
+                  }
                 }
               }
               break;
 
             case 'stream':
-              // Stream chunks are sent during execution, ignore them
-              // Final result will be sent via RESPONSE message
+              // Handle streaming output from device
+              if (message.messageId && message.openId) {
+                await this.handleStreamingChunk(message.messageId, message.openId, message.chunk || '');
+              }
               break;
 
             default:
@@ -287,6 +303,59 @@ export class RouterServer {
     console.log(`   WebSocket: ws://${host}:${port}/ws`);
     console.log(`   Environment: ${this.config.get('server', 'nodeEnv')}`);
     console.log(`\n✅ Ready to receive connections from local clients\n`);
+  }
+
+  /**
+   * Handle streaming chunk from device
+   */
+  private async handleStreamingChunk(messageId: string, openId: string, chunk: string): Promise<void> {
+    let streamData = this.streamingMessages.get(messageId);
+
+    // Initialize new streaming session
+    if (!streamData) {
+      const feishuMessageId = await this.feishuLongConnHandler.sendStreamingStart(openId, '🤔 Processing...');
+      streamData = { openId, feishuMessageId, buffer: '' };
+      this.streamingMessages.set(messageId, streamData);
+    }
+
+    // Accumulate chunk
+    streamData.buffer += chunk;
+
+    // Update message every 500ms or if buffer gets large
+    if (streamData.feishuMessageId && streamData.buffer.length % 50 === 0) {
+      await this.feishuLongConnHandler.updateStreamingMessage(
+        streamData.feishuMessageId,
+        streamData.buffer
+      );
+    }
+  }
+
+  /**
+   * Finalize streaming message
+   */
+  private async finalizeStreamingMessage(messageId: string, success: boolean, output?: string, error?: string): Promise<void> {
+    const streamData = this.streamingMessages.get(messageId);
+    if (!streamData) return;
+
+    const { feishuMessageId, openId } = streamData;
+
+    if (feishuMessageId) {
+      if (success) {
+        await this.feishuLongConnHandler.finalizeStreamingMessage(
+          feishuMessageId,
+          output || '✅ Completed'
+        );
+      } else {
+        // Replace with error message
+        await this.feishuLongConnHandler.sendMessage(
+          openId,
+          `❌ Command failed:\n${error || 'Unknown error'}`
+        );
+      }
+    }
+
+    // Clean up
+    this.streamingMessages.delete(messageId);
   }
 
   /**

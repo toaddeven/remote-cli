@@ -307,6 +307,7 @@ You can also use natural language commands to control Claude Code CLI.`,
         type: 'stream',
         messageId,
         chunk,
+        openId: this.currentOpenId,
         timestamp: Date.now(),
       });
     } catch (error) {

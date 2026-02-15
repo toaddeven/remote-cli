@@ -314,6 +314,105 @@ Examples:
   }
 
   /**
+   * Send streaming message with card update support
+   * Returns message_id for updating
+   */
+  async sendStreamingStart(openId: string, initialText: string = '🤔 Thinking...'): Promise<string | null> {
+    try {
+      const result = await this.client.im.message.create({
+        params: { receive_id_type: 'open_id' },
+        data: {
+          receive_id: openId,
+          msg_type: 'interactive',
+          content: JSON.stringify({
+            config: { wide_screen_mode: true },
+            elements: [
+              {
+                tag: 'div',
+                text: {
+                  tag: 'lark_md',
+                  content: initialText,
+                },
+              },
+            ],
+          }),
+        },
+      });
+      return result?.data?.message_id || null;
+    } catch (error: any) {
+      console.error('Failed to send streaming start:', error?.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Update streaming message content
+   */
+  async updateStreamingMessage(messageId: string, text: string): Promise<boolean> {
+    try {
+      await this.client.im.message.patch({
+        path: { message_id: messageId },
+        data: {
+          content: JSON.stringify({
+            config: { wide_screen_mode: true },
+            elements: [
+              {
+                tag: 'div',
+                text: {
+                  tag: 'lark_md',
+                  content: text.substring(0, 4000), // Limit to 4000 chars
+                },
+              },
+            ],
+          }),
+        },
+      });
+      return true;
+    } catch (error: any) {
+      console.error('Failed to update streaming message:', error?.message || error);
+      return false;
+    }
+  }
+
+  /**
+   * Finalize streaming message
+   */
+  async finalizeStreamingMessage(messageId: string, finalText: string): Promise<boolean> {
+    try {
+      await this.client.im.message.patch({
+        path: { message_id: messageId },
+        data: {
+          content: JSON.stringify({
+            config: { wide_screen_mode: true },
+            elements: [
+              {
+                tag: 'div',
+                text: {
+                  tag: 'lark_md',
+                  content: finalText.substring(0, 4000),
+                },
+              },
+              {
+                tag: 'note',
+                elements: [
+                  {
+                    tag: 'plain_text',
+                    content: '✅ Completed',
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      });
+      return true;
+    } catch (error: any) {
+      console.error('Failed to finalize streaming message:', error?.message || error);
+      return false;
+    }
+  }
+
+  /**
    * Start the Feishu WebSocket long connection
    */
   async start(): Promise<void> {
