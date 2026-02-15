@@ -90,6 +90,12 @@ export class MessageHandler {
     // Store openId for response routing
     this.currentOpenId = openId;
 
+    // Handle /abort command first, even when busy
+    if (content?.trim() === '/abort') {
+      await this.handleAbortCommand(messageId);
+      return;
+    }
+
     // Check if there is a task currently executing
     if (this.isExecuting) {
       this.sendResponse(messageId, {
@@ -120,7 +126,7 @@ export class MessageHandler {
     try {
       this.isExecuting = true;
 
-      // Handle built-in commands
+      // Handle built-in commands (except /abort which was handled above)
       const builtInResult = await this.handleBuiltInCommand(messageId, content!);
       if (builtInResult) {
         return;
@@ -145,6 +151,30 @@ export class MessageHandler {
       });
     } finally {
       this.isExecuting = false;
+    }
+  }
+
+  /**
+   * Handle abort command
+   * Can be executed even when executor is busy
+   */
+  private async handleAbortCommand(messageId: string): Promise<void> {
+    const wasExecuting = this.isExecuting;
+    const aborted = this.executor.abort();
+
+    if (aborted) {
+      this.isExecuting = false;
+      this.sendResponse(messageId, {
+        success: true,
+        output: wasExecuting
+          ? '✅ Current command has been aborted'
+          : '⚠️ No command was executing, but executor has been reset',
+      });
+    } else {
+      this.sendResponse(messageId, {
+        success: true,
+        output: 'ℹ️ No command is currently executing',
+      });
     }
   }
 
@@ -219,28 +249,6 @@ export class MessageHandler {
 
 You can also use natural language commands to control Claude Code CLI.`,
       });
-      return true;
-    }
-
-    // /abort command
-    if (trimmed === '/abort') {
-      const wasExecuting = this.isExecuting;
-      const aborted = this.executor.abort();
-
-      if (aborted) {
-        this.isExecuting = false;
-        this.sendResponse(messageId, {
-          success: true,
-          output: wasExecuting
-            ? '✅ Current command has been aborted'
-            : '⚠️ No command was executing, but executor has been reset',
-        });
-      } else {
-        this.sendResponse(messageId, {
-          success: true,
-          output: 'ℹ️ No command is currently executing',
-        });
-      }
       return true;
     }
 
