@@ -1,6 +1,5 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { spawn } from 'child_process';
 import { DirectoryGuard } from '../security/DirectoryGuard';
-import path from 'path';
 
 /**
  * Claude execution options
@@ -26,7 +25,7 @@ export interface ClaudeExecuteResult {
 
 /**
  * Claude Executor
- * Responsible for invoking Claude Agent SDK to execute commands
+ * Responsible for invoking local Claude Code CLI to execute commands
  */
 export class ClaudeExecutor {
   private directoryGuard: DirectoryGuard;
@@ -91,15 +90,8 @@ export class ClaudeExecutor {
 
     try {
       const timeout = options.timeout || this.defaultTimeout;
-      const timeoutPromise = new Promise<ClaudeExecuteResult>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Execution timeout exceeded'));
-        }, timeout);
-      });
 
-      const executePromise = this.executeInternal(prompt, options);
-
-      const result = await Promise.race([executePromise, timeoutPromise]);
+      const result = await this.executeWithClaudeCLI(prompt, options, timeout);
       return result;
     } catch (error) {
       return {
@@ -112,63 +104,89 @@ export class ClaudeExecutor {
   }
 
   /**
-   * Internal execution logic
+   * Execute using local Claude Code CLI
    */
-  private async executeInternal(
+  private async executeWithClaudeCLI(
     prompt: string,
-    options: ClaudeExecuteOptions
+    options: ClaudeExecuteOptions,
+    timeout: number
   ): Promise<ClaudeExecuteResult> {
-    try {
-      const queryInstance = query({
-        prompt,
-        options: {
-          cwd: this.currentWorkingDirectory,
-          tools: this.getAllowedTools(),
+    return new Promise((resolve, reject) => {
+      const outputChunks: string[] = [];
+      let timeoutTimer: NodeJS.Timeout;
+
+      // Build claude command arguments
+      // Use --print to get output without interactive mode
+      const args = ['--print', prompt];
+
+      const child = spawn('claude', args, {
+        cwd: this.currentWorkingDirectory,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          // Ensure non-interactive mode
+          CI: 'true',
+          FORCE_COLOR: '0',
+        },
+      });
+
+      // Handle stdout
+      child.stdout.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        outputChunks.push(chunk);
+        if (options.onStream) {
+          options.onStream(chunk);
         }
       });
 
-      let outputText = '';
-
-      // Iterate through the query results
-      for await (const message of queryInstance) {
-        // Handle streaming output
-        if (message.type === 'assistant' && message.message.content) {
-          for (const content of message.message.content) {
-            if (content.type === 'text' && options.onStream) {
-              options.onStream(content.text);
-            }
-          }
+      // Handle stderr
+      child.stderr.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        outputChunks.push(chunk);
+        if (options.onStream) {
+          options.onStream(chunk);
         }
+      });
 
-        // Collect final result
-        if (message.type === 'result' && message.subtype === 'success') {
-          outputText = message.result;
+      // Handle timeout
+      timeoutTimer = setTimeout(() => {
+        child.kill('SIGTERM');
+        reject(new Error('Execution timeout exceeded'));
+      }, timeout);
+
+      // Handle process completion
+      child.on('close', (code) => {
+        clearTimeout(timeoutTimer);
+
+        const output = outputChunks.join('');
+
+        if (code === 0) {
+          resolve({
+            success: true,
+            output: output.trim(),
+          });
+        } else {
+          resolve({
+            success: false,
+            error: `Claude Code process exited with code ${code}${output ? '\n' + output : ''}`,
+          });
         }
-      }
+      });
 
-      return {
-        success: true,
-        output: outputText,
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
+      // Handle process errors
+      child.on('error', (error) => {
+        clearTimeout(timeoutTimer);
 
-  /**
-   * Get allowed tools list
-   */
-  private getAllowedTools(): string[] {
-    return [
-      'Read',
-      'Glob',
-      'Grep',
-      'Edit',
-      'Write',
-      'Bash',
-      // Note: These tools will be further restricted by Claude Agent SDK
-      // based on the working directory and security settings
-    ];
+        if (error.message.includes('ENOENT')) {
+          reject(new Error(
+            'Claude Code CLI not found. Please ensure Claude Code is installed and available in PATH.\n' +
+            'Installation: https://docs.anthropic.com/en/docs/claude-code/installation'
+          ));
+        } else {
+          reject(error);
+        }
+      });
+    });
   }
 
   /**
@@ -180,7 +198,7 @@ export class ClaudeExecutor {
         return `Execution timeout exceeded. The task took too long to complete.`;
       }
       if (error.message.includes('ENOENT')) {
-        return `File or directory not found. Please check the path and try again.`;
+        return `Claude Code CLI not found. Please ensure it's installed and available in PATH.`;
       }
       if (error.message.includes('EACCES') || error.message.includes('Permission denied')) {
         return `Permission denied. You may not have access to this resource.`;
@@ -194,7 +212,7 @@ export class ClaudeExecutor {
    * Reset execution context
    */
   resetContext(): void {
-    // Reset context logic (if SDK supports it)
+    // Reset context logic - not applicable for CLI mode
     // Currently left as empty implementation
   }
 
