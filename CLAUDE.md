@@ -15,6 +15,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **strictly enforced** rule - any pull request containing Chinese text will be rejected.
 
+## Testing Requirement
+
+**CRITICAL: All code changes MUST include corresponding test coverage.**
+
+- **For new features**: Write unit tests, integration tests, and update E2E tests if needed
+- **For bug fixes**: Add regression tests that verify the fix
+- **For refactoring**: Ensure existing tests pass and add new tests for changed behavior
+- **For new files**: Create corresponding test files in the `tests/` directory
+- **Minimum coverage**: 80% code coverage (enforced by testing.md)
+
+**Test file organization:**
+- Unit tests: `packages/*/tests/*.test.ts` - Test individual components
+- Command tests: `packages/*/tests/commands/*.test.ts` - Test CLI commands
+- Integration tests: `packages/*/tests/integration/*.test.ts` - Test complete workflows
+
+Every commit that modifies source code MUST include the corresponding test changes. Test files are an integral part of the project and must be committed together with the source code.
+
 ## Project Overview
 
 This is a remote CLI tool that allows developers to control Claude Code CLI from their mobile phones via Feishu (飞书) messaging. The system enables developers to write code remotely when away from their computers, providing a mobile-friendly interface to Claude Code's capabilities.
