@@ -34,8 +34,8 @@ This is a remote CLI tool that allows developers to control Claude Code CLI from
 npm run build
 
 # Build specific workspace
-npm run build -w @anthropic/remote-cli        # CLI package
-npm run build -w @anthropic/remote-cli-router # Router package (when implemented)
+npm run build -w @xiaoyu/remote-cli        # CLI package
+npm run build -w @xiaoyu/remote-cli-router # Router package (when implemented)
 ```
 
 ### Testing
@@ -44,10 +44,10 @@ npm run build -w @anthropic/remote-cli-router # Router package (when implemented
 npm test
 
 # Run tests for CLI package only
-npm test -w @anthropic/remote-cli
+npm test -w @xiaoyu/remote-cli
 
 # Run tests with coverage
-npm run test:coverage -w @anthropic/remote-cli
+npm run test:coverage -w @xiaoyu/remote-cli
 
 # Run a single test file
 npm test -- DirectoryGuard.test.ts
