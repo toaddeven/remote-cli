@@ -5,6 +5,25 @@ import path from 'path';
 import os from 'os';
 
 /**
+ * Get Claude's global sessions directory
+ */
+function getClaudeSessionsDir(): string | null {
+  const homeDir = os.homedir();
+  const possiblePaths = [
+    path.join(homeDir, '.claude', 'sessions'),
+    path.join(homeDir, '.config', 'claude', 'sessions'),
+    path.join(homeDir, 'Library', 'Application Support', 'Claude', 'sessions'),
+  ];
+
+  for (const dir of possiblePaths) {
+    if (fs.existsSync(dir)) {
+      return dir;
+    }
+  }
+  return null;
+}
+
+/**
  * Claude execution options
  */
 export interface ClaudeExecuteOptions {
@@ -92,6 +111,52 @@ export class ClaudeExecutor {
   }
 
   /**
+   * Get recent session ID from Claude's sessions directory
+   * Finds the most recently modified session file
+   */
+  private async getRecentSessionId(): Promise<string | null> {
+    try {
+      const sessionsDir = getClaudeSessionsDir();
+      if (!sessionsDir) {
+        console.log('[Claude] No sessions directory found');
+        return null;
+      }
+
+      // List all session directories
+      const entries = fs.readdirSync(sessionsDir, { withFileTypes: true });
+      const sessionDirs = entries
+        .filter(entry => entry.isDirectory())
+        .map(entry => {
+          const sessionPath = path.join(sessionsDir, entry.name);
+          const stats = fs.statSync(sessionPath);
+          return {
+            id: entry.name,
+            mtime: stats.mtime,
+          };
+        })
+        .filter(session => {
+          // Validate UUID format
+          const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          return uuidPattern.test(session.id);
+        })
+        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+      if (sessionDirs.length === 0) {
+        console.log('[Claude] No sessions found in directory');
+        return null;
+      }
+
+      // Return the most recent session ID
+      const recentSession = sessionDirs[0];
+      console.log(`[Claude] Found recent session: ${recentSession.id} (last modified: ${recentSession.mtime.toISOString()})`);
+      return recentSession.id;
+    } catch (error) {
+      console.error('[Claude] Failed to get recent session ID:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get current working directory
    */
   getCurrentWorkingDirectory(): string {
@@ -112,65 +177,6 @@ export class ClaudeExecutor {
     // Update session file path
     this.sessionFilePath = path.join(this.currentWorkingDirectory, '.claude-session');
     this.loadSessionId();
-  }
-
-  /**
-   * Get recent session ID from Claude Code
-   */
-  private async getRecentSessionId(): Promise<string | null> {
-    return new Promise((resolve, reject) => {
-      const output: string[] = [];
-
-      // Run claude without arguments to get session list
-      const child = spawn('claude', [], {
-        cwd: this.currentWorkingDirectory,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          CI: 'true',
-          FORCE_COLOR: '0',
-        },
-      });
-
-      let timeout = setTimeout(() => {
-        child.kill('SIGTERM');
-        resolve(null); // Timeout, use existing or create new
-      }, 5000);
-
-      child.stdout.on('data', (data: Buffer) => {
-        output.push(data.toString());
-      });
-
-      child.stderr.on('data', (data: Buffer) => {
-        output.push(data.toString());
-      });
-
-      child.on('close', (code) => {
-        clearTimeout(timeout);
-
-        const outputText = output.join('');
-        console.log('[Claude] Session list output:', outputText.substring(0, 500));
-
-        // Try to parse session ID from output
-        // Looking for patterns like UUIDs in the output
-        const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-        const matches = outputText.match(uuidPattern);
-
-        if (matches && matches.length > 0) {
-          // Return the first (most recent) session ID
-          console.log(`[Claude] Found session ID: ${matches[0]}`);
-          resolve(matches[0]);
-        } else {
-          resolve(null);
-        }
-      });
-
-      child.on('error', (error) => {
-        clearTimeout(timeout);
-        console.error('[Claude] Failed to get session list:', error);
-        resolve(null);
-      });
-    });
   }
 
   /**
@@ -202,7 +208,7 @@ export class ClaudeExecutor {
     try {
       const timeout = options.timeout || this.defaultTimeout;
 
-      // If we don't have a session ID, try to get recent one
+      // If we don't have a session ID, try to get recent one from Claude's sessions directory
       if (!this.sessionId) {
         console.log('[Claude] No session ID, checking for recent sessions...');
         this.sessionId = await this.getRecentSessionId();

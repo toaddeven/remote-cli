@@ -18,6 +18,7 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 - 🔒 **Secure**: Directory whitelisting, command filtering, and device authentication
 - 📱 **Mobile-Optimized**: Simplified commands and rich text formatting for Feishu
 - 🤖 **Claude Code Integration**: Full access to Claude Code's capabilities and context
+- ⚡ **Persistent Process**: Long-running Claude process with bidirectional streaming via stdio (no repeated spawn overhead)
 - 🚀 **Easy Setup**: One-command installation and initialization
 
 ## Prerequisites
@@ -523,6 +524,50 @@ Dangerous commands are automatically blocked, including:
 2. **Regular audits**: Review allowed directories periodically
 3. **Separate accounts**: Use different Feishu accounts for work and personal
 4. **Monitor logs**: Check `remote-cli logs` for suspicious activity
+
+## Technical Details
+
+### Claude Process Execution Modes
+
+The CLI supports two execution modes for Claude Code:
+
+#### 1. Persistent Mode (Default)
+
+Uses `--input-format=stream-json` and `--output-format=stream-json` to maintain a long-running Claude process:
+
+- **Process**: Starts Claude once and keeps it running
+- **Communication**: Bidirectional JSON streaming via stdin/stdout
+- **Benefits**: No process spawn overhead, faster response times, maintains conversation context seamlessly
+- **Auto-detection**: Automatically falls back to spawn mode if running inside a Claude Code session (to avoid nested session errors)
+
+```typescript
+// The executor uses stream-json format for real-time communication
+const args = [
+  '--input-format=stream-json',
+  '--output-format=stream-json',
+  '--include-partial-messages',
+];
+```
+
+#### 2. Spawn Mode (Fallback)
+
+Uses `--print` mode with `--resume` for one-shot execution:
+
+- **Process**: Spawns a new Claude process for each command
+- **Communication**: Standard output capture
+- **Use case**: Used when running inside Claude Code or when persistent mode fails
+
+### Session Management
+
+Sessions are automatically persisted using:
+
+1. **Local session file**: `.claude-session` in the working directory
+2. **Claude's native sessions**: Stored in `~/.claude/sessions/`
+
+When resuming, the executor:
+1. Checks the local session file first
+2. Falls back to the most recently modified session in Claude's sessions directory
+3. Creates a new session if none exists
 
 ## Troubleshooting
 

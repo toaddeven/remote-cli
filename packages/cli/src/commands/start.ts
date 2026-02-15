@@ -1,6 +1,6 @@
 import { ConfigManager } from '../config/ConfigManager';
 import { WebSocketClient } from '../client/WebSocketClient';
-import { ClaudeExecutor } from '../executor/ClaudeExecutor';
+import { createClaudeExecutor } from '../executor';
 import { MessageHandler } from '../client/MessageHandler';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import ora from 'ora';
@@ -75,7 +75,7 @@ export async function startCommand(
     spinner.text = 'Initializing components...';
 
     const directoryGuard = new DirectoryGuard(security.allowedDirectories);
-    const executor = new ClaudeExecutor(directoryGuard);
+    const executor = createClaudeExecutor(directoryGuard, 'auto');
 
     // Create WebSocket URL
     const wsUrl = serverUrl.replace(/^http/, 'ws') + '/ws';

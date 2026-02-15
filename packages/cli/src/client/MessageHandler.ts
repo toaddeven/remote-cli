@@ -1,7 +1,7 @@
-import { ClaudeExecutor } from '../executor/ClaudeExecutor';
 import { WebSocketClient } from './WebSocketClient';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import { IncomingMessage, OutgoingMessage } from '../types';
+import type { ClaudeExecutor, ClaudePersistentExecutor } from '../executor';
 
 /**
  * Legacy message type for backward compatibility
@@ -19,7 +19,7 @@ export interface Message {
  */
 export class MessageHandler {
   private wsClient: WebSocketClient;
-  private executor: ClaudeExecutor;
+  private executor: ClaudeExecutor | ClaudePersistentExecutor;
   private directoryGuard: DirectoryGuard;
   private isDestroyed = false;
   private isExecuting = false;
@@ -27,7 +27,7 @@ export class MessageHandler {
 
   constructor(
     wsClient: WebSocketClient,
-    executor: ClaudeExecutor,
+    executor: ClaudeExecutor | ClaudePersistentExecutor,
     directoryGuard: DirectoryGuard
   ) {
     this.wsClient = wsClient;
