@@ -119,6 +119,9 @@ export class ClaudeExecutor {
       // Use --print to get output without interactive mode
       const args = ['--print', prompt];
 
+      console.log(`[Claude] Starting: claude ${args.join(' ')}`);
+      console.log(`[Claude] Working directory: ${this.currentWorkingDirectory}`);
+
       const child = spawn('claude', args, {
         cwd: this.currentWorkingDirectory,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -130,9 +133,12 @@ export class ClaudeExecutor {
         },
       });
 
+      console.log(`[Claude] Process started with PID: ${child.pid}`);
+
       // Handle stdout
       child.stdout.on('data', (data: Buffer) => {
         const chunk = data.toString();
+        console.log('[Claude stdout]', chunk);
         outputChunks.push(chunk);
         if (options.onStream) {
           options.onStream(chunk);
@@ -142,6 +148,7 @@ export class ClaudeExecutor {
       // Handle stderr
       child.stderr.on('data', (data: Buffer) => {
         const chunk = data.toString();
+        console.error('[Claude stderr]', chunk);
         outputChunks.push(chunk);
         if (options.onStream) {
           options.onStream(chunk);
@@ -157,15 +164,18 @@ export class ClaudeExecutor {
       // Handle process completion
       child.on('close', (code) => {
         clearTimeout(timeoutTimer);
+        console.log(`[Claude] Process exited with code: ${code}`);
 
         const output = outputChunks.join('');
 
         if (code === 0) {
+          console.log(`[Claude] Execution completed successfully`);
           resolve({
             success: true,
             output: output.trim(),
           });
         } else {
+          console.error(`[Claude] Execution failed with code ${code}`);
           resolve({
             success: false,
             error: `Claude Code process exited with code ${code}${output ? '\n' + output : ''}`,
