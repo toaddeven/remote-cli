@@ -266,16 +266,55 @@ export function formatToolResultMessage(result: ToolResultInfo): string {
 }
 
 /**
- * Create a visual separator between tool executions
+ * Feishu card element for horizontal rule (divider)
+ */
+export interface DividerElement {
+  tag: 'hr';
+}
+
+/**
+ * Feishu card element for markdown content
+ */
+export interface MarkdownElement {
+  tag: 'markdown';
+  content: string;
+}
+
+/**
+ * Union type for card content elements
+ */
+export type CardElement = DividerElement | MarkdownElement;
+
+/**
+ * Create a Feishu divider element (horizontal rule)
+ * @returns Divider element for card
+ */
+export function createDividerElement(): DividerElement {
+  return { tag: 'hr' };
+}
+
+/**
+ * Create a Feishu markdown element
+ * @param content Markdown content
+ * @returns Markdown element for card
+ */
+export function createMarkdownElement(content: string): MarkdownElement {
+  return { tag: 'markdown', content };
+}
+
+/**
+ * Create a visual separator between tool executions (for text mode)
  * @returns Formatted separator string
+ * @deprecated Use createDividerElement() for card-based messages
  */
 export function createToolSeparator(): string {
   return '\n────────────────────\n';
 }
 
 /**
- * Create a visual separator between tool execution and final response
+ * Create a visual separator between tool execution and final response (for text mode)
  * @returns Formatted separator string
+ * @deprecated Use createDividerElement() for card-based messages
  */
 export function createResponseSeparator(): string {
   return '\n\n';
@@ -300,11 +339,8 @@ export function createToolUseCard(toolUse: ToolUseInfo): any {
     },
     elements: [
       {
-        tag: 'div',
-        text: {
-          tag: 'lark_md',
-          content: formatToolParamsMarkdown(toolUse.input),
-        },
+        tag: 'markdown',
+        content: formatToolParamsMarkdown(toolUse.input),
       },
       {
         tag: 'note',
@@ -338,11 +374,8 @@ export function createToolResultCard(result: ToolResultInfo): any {
     },
     elements: [
       {
-        tag: 'div',
-        text: {
-          tag: 'lark_md',
-          content: result.content.substring(0, 4000), // Feishu limit
-        },
+        tag: 'markdown',
+        content: result.content.substring(0, 4000), // Feishu limit
       },
       {
         tag: 'note',

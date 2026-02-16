@@ -133,11 +133,8 @@ describe('FeishuLongConnHandler', () => {
             config: { wide_screen_mode: true },
             elements: [
               {
-                tag: 'div',
-                text: {
-                  tag: 'lark_md',
-                  content: 'Short content'
-                }
+                tag: 'markdown',
+                content: 'Short content'
               }
             ]
           })
@@ -212,11 +209,8 @@ describe('FeishuLongConnHandler', () => {
             config: { wide_screen_mode: true },
             elements: [
               {
-                tag: 'div',
-                text: {
-                  tag: 'lark_md',
-                  content: 'Final content'
-                }
+                tag: 'markdown',
+                content: 'Final content'
               },
               {
                 tag: 'note',

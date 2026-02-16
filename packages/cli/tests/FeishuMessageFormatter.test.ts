@@ -5,8 +5,12 @@ import {
   createResponseSeparator,
   createToolUseCard,
   createToolResultCard,
+  createDividerElement,
+  createMarkdownElement,
   type ToolUseInfo,
-  type ToolResultInfo
+  type ToolResultInfo,
+  type DividerElement,
+  type MarkdownElement
 } from '../src/utils/FeishuMessageFormatter';
 
 describe('FeishuMessageFormatter', () => {
@@ -406,8 +410,8 @@ describe('FeishuMessageFormatter', () => {
 
       const card = createToolResultCard(result);
 
-      const divElement = card.elements.find((el: any) => el.tag === 'div');
-      expect(divElement.text.content.length).toBeLessThanOrEqual(4000);
+      const mdElement = card.elements.find((el: any) => el.tag === 'markdown');
+      expect(mdElement.content.length).toBeLessThanOrEqual(4000);
     });
   });
 
@@ -416,6 +420,31 @@ describe('FeishuMessageFormatter', () => {
       const separator = createResponseSeparator();
 
       expect(separator).toBe('\n\n'); // Simple double newline separator
+    });
+  });
+
+  describe('createDividerElement', () => {
+    it('should create a divider element with hr tag', () => {
+      const divider: DividerElement = createDividerElement();
+
+      expect(divider.tag).toBe('hr');
+    });
+  });
+
+  describe('createMarkdownElement', () => {
+    it('should create a markdown element with content', () => {
+      const content = '**Bold text** and `code`';
+      const element: MarkdownElement = createMarkdownElement(content);
+
+      expect(element.tag).toBe('markdown');
+      expect(element.content).toBe(content);
+    });
+
+    it('should handle empty content', () => {
+      const element: MarkdownElement = createMarkdownElement('');
+
+      expect(element.tag).toBe('markdown');
+      expect(element.content).toBe('');
     });
   });
 });

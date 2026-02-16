@@ -34,6 +34,9 @@ export class FeishuLongConnHandler {
   private lastProcessedLengths: Map<string, number> = new Map();
   // Per-message serialization locks to prevent concurrent updates from creating duplicates
   private messageLocks: Map<string, Promise<any>> = new Map();
+  // Pattern to match tool use separator lines
+  private readonly TOOL_USE_PATTERN = /─+ TOOL USE ─+/;
+  private readonly TOOL_SEPARATOR_PATTERN = /─{20,}/;
 
   constructor(config: FeishuLongConnHandlerConfig) {
     this.appId = config.appId;
@@ -434,11 +437,8 @@ Examples:
             config: { wide_screen_mode: true },
             elements: [
               {
-                tag: 'div',
-                text: {
-                  tag: 'lark_md',
-                  content: initialText,
-                },
+                tag: 'markdown',
+                content: initialText,
               },
             ],
           }),
@@ -586,11 +586,8 @@ Examples:
                   config: { wide_screen_mode: true },
                   elements: [
                     {
-                      tag: 'div',
-                      text: {
-                        tag: 'lark_md',
-                        content,
-                      },
+                      tag: 'markdown',
+                      content,
                     },
                   ],
                 }),
@@ -612,11 +609,8 @@ Examples:
                 config: { wide_screen_mode: true },
                 elements: [
                   {
-                    tag: 'div',
-                    text: {
-                      tag: 'lark_md',
-                      content: newContent,
-                    },
+                    tag: 'markdown',
+                    content: newContent,
                   },
                 ],
               }),
@@ -699,11 +693,8 @@ Examples:
         // Only add completion note to the last chunk
         const elements: any[] = [
           {
-            tag: 'div',
-            text: {
-              tag: 'lark_md',
-              content,
-            },
+            tag: 'markdown',
+            content,
           },
         ];
 
@@ -743,11 +734,8 @@ Examples:
 
           const newElements: any[] = [
             {
-              tag: 'div',
-              text: {
-                tag: 'lark_md',
-                content: newContent,
-              },
+              tag: 'markdown',
+              content: newContent,
             },
           ];
 

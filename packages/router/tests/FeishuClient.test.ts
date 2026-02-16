@@ -278,11 +278,8 @@ describe('FeishuClient', () => {
       const card = {
         elements: [
           {
-            tag: 'div',
-            text: {
-              tag: 'lark_md',
-              content: '**Test Card**'
-            }
+            tag: 'markdown',
+            content: '**Test Card**'
           }
         ]
       };
