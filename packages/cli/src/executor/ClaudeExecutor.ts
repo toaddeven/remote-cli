@@ -206,7 +206,10 @@ export class ClaudeExecutor {
     this.isExecuting = true;
 
     try {
-      const timeout = options.timeout || this.defaultTimeout;
+      // Only use timeout if explicitly provided in options
+      // Default timeout is disabled to prevent premature termination of long-running tasks
+      // Users can cancel with /abort if needed
+      const timeout = options.timeout; // undefined means no timeout
 
       // If we don't have a session ID, try to get recent one from Claude's sessions directory
       if (!this.sessionId) {
@@ -235,11 +238,11 @@ export class ClaudeExecutor {
   private async executeWithClaudeCLI(
     prompt: string,
     options: ClaudeExecuteOptions,
-    timeout: number
+    timeout: number | undefined
   ): Promise<ClaudeExecuteResult> {
     return new Promise((resolve, reject) => {
       const outputChunks: string[] = [];
-      let timeoutTimer: NodeJS.Timeout;
+      let timeoutTimer: NodeJS.Timeout | undefined;
 
       // Build claude command arguments
       const args: string[] = ['--print'];
@@ -288,16 +291,21 @@ export class ClaudeExecutor {
         }
       });
 
-      // Handle timeout
-      timeoutTimer = setTimeout(() => {
-        console.error('[Claude] Command timeout');
-        child.kill('SIGTERM');
-        reject(new Error('Execution timeout exceeded'));
-      }, timeout);
+      // Handle timeout (only if explicitly provided)
+      // Default timeout is disabled to prevent premature termination
+      if (timeout !== undefined) {
+        timeoutTimer = setTimeout(() => {
+          console.error('[Claude] Command timeout');
+          child.kill('SIGTERM');
+          reject(new Error('Execution timeout exceeded'));
+        }, timeout);
+      }
 
       // Handle process completion
       child.on('close', (code) => {
-        clearTimeout(timeoutTimer);
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+        }
         console.log(`[Claude] Process exited with code: ${code}`);
 
         const output = outputChunks.join('');
@@ -330,7 +338,9 @@ export class ClaudeExecutor {
 
       // Handle process errors
       child.on('error', (error) => {
-        clearTimeout(timeoutTimer);
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+        }
         console.error('[Claude] Process error:', error);
 
         if (error.message.includes('ENOENT')) {

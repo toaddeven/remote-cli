@@ -319,35 +319,59 @@ describe('ClaudeExecutor', () => {
   });
 
   describe('timeout handling', () => {
-    it('should timeout long-running executions', async () => {
-      vi.useFakeTimers();
+    it('should timeout long-running executions when timeout is explicitly specified', async () => {
+      // Create a fresh mock process for this test
+      const mockChildProcess = new EventEmitter() as any;
+      mockChildProcess.stdout = new EventEmitter();
+      mockChildProcess.stderr = new EventEmitter();
+      mockChildProcess.stdin = {
+        write: vi.fn(),
+        end: vi.fn(),
+      };
+      mockChildProcess.kill = vi.fn();
 
-      const executePromise = executor.execute('long command', { timeout: 100 });
+      mockSpawn.mockReturnValueOnce(mockChildProcess);
 
-      // Don't emit close event, let it timeout
-      vi.advanceTimersByTime(101);
+      // Start execution with a short timeout
+      const executePromise = executor.execute('long command', { timeout: 50 });
+
+      // Wait for the timeout to trigger
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       const result = await executePromise;
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('timeout');
-
-      vi.useRealTimers();
+      expect(mockChildProcess.kill).toHaveBeenCalled();
     });
 
-    it('should use default timeout if not specified', async () => {
-      const executePromise = executor.execute('command');
+    it('should not timeout when no timeout is specified', async () => {
+      // Create a fresh mock process for this test
+      const mockChildProcess = new EventEmitter() as any;
+      mockChildProcess.stdout = new EventEmitter();
+      mockChildProcess.stderr = new EventEmitter();
+      mockChildProcess.stdin = {
+        write: vi.fn(),
+        end: vi.fn(),
+      };
+      mockChildProcess.kill = vi.fn();
 
-      // Simulate fast execution
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      mockSpawn.mockReturnValueOnce(mockChildProcess);
+
+      const executePromise = executor.execute('long running command');
+
+      // Simulate execution completing after a delay (no timeout should occur)
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'ok');
-        mockProcess.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'ok');
+        mockChildProcess.emit('close', 0);
       });
 
       const result = await executePromise;
 
+      // Should complete successfully without timeout
       expect(result.success).toBe(true);
+      expect(result.output).toContain('ok');
+      expect(mockChildProcess.kill).not.toHaveBeenCalled();
     });
   });
 

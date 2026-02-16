@@ -175,6 +175,9 @@ export class ClaudePersistentExecutor extends EventEmitter {
   private inputDetectionTimer?: NodeJS.Timeout;
   private lastOutputTime = 0;
 
+  // Activity tracking for timeout extension (optional, can be disabled)
+  private activityTrackingEnabled = false;
+
   constructor(directoryGuard: DirectoryGuard) {
     super();
     this.directoryGuard = directoryGuard;
@@ -504,8 +507,19 @@ export class ClaudePersistentExecutor extends EventEmitter {
   /**
    * Reset the command timeout timer when activity is detected
    * This prevents timeout during long-running tasks with continuous output
+   *
+   * NOTE: This method is currently disabled because inactivity timeout can cause
+   * state inconsistency - the executor may timeout while Claude process is still
+   * running, leading to confusing behavior where user sees timeout error but
+   * Claude is still working. Users can use /abort to cancel long-running tasks.
    */
   private resetActivityTimeout(): void {
+    // Activity-based timeout is disabled to prevent state inconsistency.
+    // If a command hangs, users can manually abort with /abort.
+    if (!this.activityTrackingEnabled) {
+      return;
+    }
+
     if (!this.isProcessing || !this.currentTimeoutTimer) {
       return;
     }
@@ -1014,12 +1028,16 @@ export class ClaudePersistentExecutor extends EventEmitter {
       startTime: this.currentTaskStartTime,
     });
 
-    // Set timeout
-    const timeout = command.options.timeout || this.defaultTimeout;
-    this.currentTimeoutTimer = setTimeout(() => {
-      console.error('[ClaudePersistent] Command timeout');
-      this.completeCurrentCommand(false, 'Execution timeout exceeded');
-    }, timeout);
+    // Set timeout (only if explicitly requested via options.timeout)
+    // Note: We don't set a default timeout because it can cause state inconsistency
+    // - the executor times out but Claude process keeps running
+    // Users can cancel long-running tasks with /abort
+    if (command.options.timeout) {
+      this.currentTimeoutTimer = setTimeout(() => {
+        console.error('[ClaudePersistent] Command timeout');
+        this.completeCurrentCommand(false, 'Execution timeout exceeded');
+      }, command.options.timeout);
+    }
 
     // Send the command
     const inputMessage: ClaudeInputMessage = {
