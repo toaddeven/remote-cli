@@ -380,6 +380,73 @@ describe('FeishuLongConnHandler', () => {
     });
   });
 
+  describe('concurrent update serialization', () => {
+    it('should not create duplicate continuation messages when updates are concurrent', async () => {
+      // Simulate slow API calls where create takes time to resolve
+      let createResolvers: Array<(value: any) => void> = [];
+      mockClient.im.message.patch.mockResolvedValue({});
+      mockClient.im.message.create.mockImplementation(() => {
+        return new Promise(resolve => {
+          createResolvers.push(resolve);
+        });
+      });
+
+      // Fire two concurrent updates that both exceed the limit
+      // Without serialization, both will try to create a continuation message
+      const update1 = handler.updateStreamingMessage('msg_123', 'a'.repeat(5000), 'ou_user_123');
+      const update2 = handler.updateStreamingMessage('msg_123', 'a'.repeat(5500), 'ou_user_123');
+
+      // Wait for microtasks so both calls enter the method
+      await new Promise(r => setTimeout(r, 10));
+
+      // Resolve all create calls
+      for (const resolver of createResolvers) {
+        resolver({ data: { message_id: `msg_cont_${createResolvers.indexOf(resolver) + 1}` } });
+      }
+
+      await Promise.all([update1, update2]);
+
+      // With serialization, only ONE continuation message should be created
+      // The second call should see the chain already has 2 entries and just update
+      expect(mockClient.im.message.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('should serialize finalize after pending update completes', async () => {
+      let patchResolver: ((value: any) => void) | null = null;
+      mockClient.im.message.patch.mockImplementation(() => {
+        return new Promise(resolve => {
+          patchResolver = resolve;
+        });
+      });
+      mockClient.im.message.create.mockResolvedValue({ data: { message_id: 'msg_cont_1' } });
+
+      // Start an update that will be slow (patch takes time)
+      const updatePromise = handler.updateStreamingMessage('msg_123', 'Short content', 'ou_user_123');
+
+      // Immediately fire finalize while update is still pending
+      const finalizePromise = handler.finalizeStreamingMessage('msg_123', 'Short content', 'ABC123', 'ou_user_123');
+
+      // Resolve the first patch
+      await new Promise(r => setTimeout(r, 10));
+      if (patchResolver) {
+        patchResolver({});
+        patchResolver = null;
+      }
+
+      // Wait for update to complete, then finalize's patch should proceed
+      await new Promise(r => setTimeout(r, 10));
+      if (patchResolver) {
+        patchResolver({});
+      }
+
+      await Promise.all([updatePromise, finalizePromise]);
+
+      // Both should complete successfully without errors
+      // The finalize should wait for the update to finish first
+      expect(mockClient.im.message.patch).toHaveBeenCalled();
+    });
+  });
+
   describe('splitTextIntoChunks', () => {
     it('should return single chunk for short text', () => {
       const chunks = (handler as any).splitTextIntoChunks('Short message', 4000);

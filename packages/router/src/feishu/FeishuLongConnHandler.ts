@@ -32,6 +32,8 @@ export class FeishuLongConnHandler {
   // Track the last processed text length for each message chain
   // This helps us only send NEW content to existing messages, preventing duplication
   private lastProcessedLengths: Map<string, number> = new Map();
+  // Per-message serialization locks to prevent concurrent updates from creating duplicates
+  private messageLocks: Map<string, Promise<any>> = new Map();
 
   constructor(config: FeishuLongConnHandlerConfig) {
     this.appId = config.appId;
@@ -450,6 +452,24 @@ Examples:
   }
 
   /**
+   * Serialize async operations per messageId to prevent race conditions.
+   * Concurrent calls for the same messageId will queue and execute in order.
+   */
+  private async withMessageLock<T>(messageId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.messageLocks.get(messageId) || Promise.resolve();
+    const current = previous.then(fn, fn); // Run fn after previous completes (even if it failed)
+    this.messageLocks.set(messageId, current);
+    try {
+      return await current;
+    } finally {
+      // Clean up lock if this is still the latest operation
+      if (this.messageLocks.get(messageId) === current) {
+        this.messageLocks.delete(messageId);
+      }
+    }
+  }
+
+  /**
    * Split text into chunks that fit within Feishu's message size limit
    * Tries to split at newlines to keep context intact
    */
@@ -499,6 +519,10 @@ Examples:
    * - New messages are only created when the last message exceeds the limit
    */
   async updateStreamingMessage(messageId: string, text: string, openId?: string): Promise<boolean> {
+    return this.withMessageLock(messageId, () => this._updateStreamingMessage(messageId, text, openId));
+  }
+
+  private async _updateStreamingMessage(messageId: string, text: string, openId?: string): Promise<boolean> {
     try {
       // Get or initialize message chain
       let chain = this.messageChains.get(messageId);
@@ -617,6 +641,10 @@ Examples:
    * Automatically creates new messages if content exceeds Feishu's size limit
    */
   async finalizeStreamingMessage(messageId: string, finalText: string, sessionAbbr?: string, openId?: string): Promise<boolean> {
+    return this.withMessageLock(messageId, () => this._finalizeStreamingMessage(messageId, finalText, sessionAbbr, openId));
+  }
+
+  private async _finalizeStreamingMessage(messageId: string, finalText: string, sessionAbbr?: string, openId?: string): Promise<boolean> {
     try {
       // Get or initialize message chain
       let chain = this.messageChains.get(messageId);
