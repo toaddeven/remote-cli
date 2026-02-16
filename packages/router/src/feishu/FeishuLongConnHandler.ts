@@ -426,7 +426,7 @@ Examples:
    * Returns message_id for updating
    */
   async sendStreamingStart(openId: string, initialText: string = '🤔 Thinking...'): Promise<string | null> {
-    console.log(`[FeishuHandler] Creating interactive card for ${openId}`);
+    console.log(`[FeishuHandler] Creating interactive card v2 for ${openId}`);
     try {
       const result = await this.client.im.message.create({
         params: { receive_id_type: 'open_id' },
@@ -434,13 +434,15 @@ Examples:
           receive_id: openId,
           msg_type: 'interactive',
           content: JSON.stringify({
-            config: { wide_screen_mode: true },
-            elements: [
-              {
-                tag: 'markdown',
-                content: initialText,
-              },
-            ],
+            schema: '2.0',
+            body: {
+              elements: [
+                {
+                  tag: 'markdown',
+                  content: initialText,
+                },
+              ],
+            },
           }),
         },
       });
@@ -583,13 +585,15 @@ Examples:
               path: { message_id: chain[i] },
               data: {
                 content: JSON.stringify({
-                  config: { wide_screen_mode: true },
-                  elements: [
-                    {
-                      tag: 'markdown',
-                      content,
-                    },
-                  ],
+                  schema: '2.0',
+                  body: {
+                    elements: [
+                      {
+                        tag: 'markdown',
+                        content,
+                      },
+                    ],
+                  },
                 }),
               },
             });
@@ -606,13 +610,15 @@ Examples:
               receive_id: openId,
               msg_type: 'interactive',
               content: JSON.stringify({
-                config: { wide_screen_mode: true },
-                elements: [
-                  {
-                    tag: 'markdown',
-                    content: newContent,
-                  },
-                ],
+                schema: '2.0',
+                body: {
+                  elements: [
+                    {
+                      tag: 'markdown',
+                      content: newContent,
+                    },
+                  ],
+                },
               }),
             },
           });
@@ -700,13 +706,16 @@ Examples:
 
         if (isLastChunk) {
           elements.push({
-            tag: 'note',
-            elements: [
-              {
-                tag: 'plain_text',
-                content: noteContent,
-              },
-            ],
+            tag: 'div',
+            text: {
+              tag: 'plain_text',
+              content: noteContent,
+            },
+            icon: {
+              tag: 'standard_icon',
+              token: 'check-circle-filled',
+              color: 'green',
+            },
           });
         }
 
@@ -721,8 +730,10 @@ Examples:
               path: { message_id: chain[i] },
               data: {
                 content: JSON.stringify({
-                  config: { wide_screen_mode: true },
-                  elements,
+                  schema: '2.0',
+                  body: {
+                    elements,
+                  },
                 }),
               },
             });
@@ -741,13 +752,16 @@ Examples:
 
           if (isLastChunk) {
             newElements.push({
-              tag: 'note',
-              elements: [
-                {
-                  tag: 'plain_text',
-                  content: noteContent,
-                },
-              ],
+              tag: 'div',
+              text: {
+                tag: 'plain_text',
+                content: noteContent,
+              },
+              icon: {
+                tag: 'standard_icon',
+                token: 'check-circle-filled',
+                color: 'green',
+              },
             });
           }
 
@@ -757,8 +771,10 @@ Examples:
               receive_id: openId,
               msg_type: 'interactive',
               content: JSON.stringify({
-                config: { wide_screen_mode: true },
-                elements: newElements,
+                schema: '2.0',
+                body: {
+                  elements: newElements,
+                },
               }),
             },
           });

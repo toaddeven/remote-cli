@@ -130,13 +130,15 @@ describe('FeishuLongConnHandler', () => {
         path: { message_id: 'msg_123' },
         data: {
           content: JSON.stringify({
-            config: { wide_screen_mode: true },
-            elements: [
-              {
-                tag: 'markdown',
-                content: 'Short content'
-              }
-            ]
+            schema: '2.0',
+            body: {
+              elements: [
+                {
+                  tag: 'markdown',
+                  content: 'Short content'
+                }
+              ]
+            }
           })
         }
       });
@@ -154,13 +156,13 @@ describe('FeishuLongConnHandler', () => {
       expect(mockClient.im.message.patch).toHaveBeenCalled();
       const patchCall = mockClient.im.message.patch.mock.calls[0];
       const patchContent = JSON.parse(patchCall[0].data.content);
-      expect(patchContent.elements[0].text.content).toContain('➡️ Continued in next message');
+      expect(patchContent.body.elements[0].content).toContain('➡️ Continued in next message');
 
       // Should create continuation message
       expect(mockClient.im.message.create).toHaveBeenCalled();
       const createCall = mockClient.im.message.create.mock.calls[0];
       const createContent = JSON.parse(createCall[0].data.content);
-      expect(createContent.elements[0].text.content).toContain('⬅️ Continued from previous message');
+      expect(createContent.body.elements[0].content).toContain('⬅️ Continued from previous message');
     });
 
     it('should handle multiple chunks', async () => {
@@ -206,22 +208,27 @@ describe('FeishuLongConnHandler', () => {
         path: { message_id: 'msg_123' },
         data: {
           content: JSON.stringify({
-            config: { wide_screen_mode: true },
-            elements: [
-              {
-                tag: 'markdown',
-                content: 'Final content'
-              },
-              {
-                tag: 'note',
-                elements: [
-                  {
+            schema: '2.0',
+            body: {
+              elements: [
+                {
+                  tag: 'markdown',
+                  content: 'Final content'
+                },
+                {
+                  tag: 'div',
+                  text: {
                     tag: 'plain_text',
                     content: '✅ Completed · Session: ABC123'
+                  },
+                  icon: {
+                    tag: 'standard_icon',
+                    token: 'check-circle-filled',
+                    color: 'green'
                   }
-                ]
-              }
-            ]
+                }
+              ]
+            }
           })
         }
       });
@@ -239,15 +246,15 @@ describe('FeishuLongConnHandler', () => {
       expect(mockClient.im.message.patch).toHaveBeenCalled();
       const patchCall = mockClient.im.message.patch.mock.calls[0];
       const patchContent = JSON.parse(patchCall[0].data.content);
-      expect(patchContent.elements[0].text.content).toContain('➡️ Continued in next message');
+      expect(patchContent.body.elements[0].content).toContain('➡️ Continued in next message');
 
       // Should create continuation message with completion note
       expect(mockClient.im.message.create).toHaveBeenCalled();
       const createCall = mockClient.im.message.create.mock.calls[0];
       const createContent = JSON.parse(createCall[0].data.content);
-      expect(createContent.elements[0].text.content).toContain('⬅️ Continued from previous message');
-      expect(createContent.elements[1].tag).toBe('note');
-      expect(createContent.elements[1].elements[0].content).toContain('✅ Completed');
+      expect(createContent.body.elements[0].content).toContain('⬅️ Continued from previous message');
+      expect(createContent.body.elements[1].tag).toBe('div');
+      expect(createContent.body.elements[1].text.content).toContain('✅ Completed');
     });
 
     it('should handle very long content with multiple chunks', async () => {
