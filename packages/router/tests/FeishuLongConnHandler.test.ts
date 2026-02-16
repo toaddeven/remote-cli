@@ -288,6 +288,98 @@ describe('FeishuLongConnHandler', () => {
     });
   });
 
+  describe('finalizeStreamingMessage after streaming updates', () => {
+    it('should not re-patch frozen messages that already exist in the chain', async () => {
+      mockClient.im.message.patch.mockResolvedValue({});
+      mockClient.im.message.create.mockResolvedValue({ data: { message_id: 'msg_cont_1' } });
+
+      // Step 1: Simulate streaming that created a 2-message chain
+      // First update: short content within single message
+      await handler.updateStreamingMessage('msg_123', 'a'.repeat(3000), 'ou_user_123');
+
+      // Second update: content grows past limit, creates continuation message
+      await handler.updateStreamingMessage('msg_123', 'a'.repeat(5000), 'ou_user_123');
+
+      // At this point, chain = ['msg_123', 'msg_cont_1']
+      // msg_123 is frozen, msg_cont_1 has the tail content
+
+      // Reset mocks to track only finalize calls
+      mockClient.im.message.patch.mockClear();
+      mockClient.im.message.create.mockClear();
+
+      // Step 2: Finalize with the same text length (no new content added)
+      await handler.finalizeStreamingMessage('msg_123', 'a'.repeat(5000), 'ABC123', 'ou_user_123');
+
+      // The first message (msg_123) is frozen - should NOT be patched again
+      // Only the last message (msg_cont_1) should be patched with the completion note
+      // So we expect exactly 1 patch call (for the last message), not 2
+      expect(mockClient.im.message.patch).toHaveBeenCalledTimes(1);
+
+      // Verify the patched message is the continuation (last in chain), not the first
+      const patchCall = mockClient.im.message.patch.mock.calls[0];
+      expect(patchCall[0].path.message_id).toBe('msg_cont_1');
+
+      // Should NOT create any new messages (chain already covers all chunks)
+      expect(mockClient.im.message.create).not.toHaveBeenCalled();
+    });
+
+    it('should not create duplicate continuation messages when chunk boundaries shift', async () => {
+      mockClient.im.message.patch.mockResolvedValue({});
+      mockClient.im.message.create
+        .mockResolvedValueOnce({ data: { message_id: 'msg_cont_1' } })
+        .mockResolvedValueOnce({ data: { message_id: 'msg_cont_2' } })
+        .mockResolvedValueOnce({ data: { message_id: 'msg_unexpected' } });
+
+      // Step 1: Stream content that creates 3-message chain
+      await handler.updateStreamingMessage('msg_123', 'a'.repeat(3000), 'ou_user_123');
+      await handler.updateStreamingMessage('msg_123', 'a'.repeat(6000), 'ou_user_123');
+      await handler.updateStreamingMessage('msg_123', 'a'.repeat(9000), 'ou_user_123');
+
+      // chain = ['msg_123', 'msg_cont_1', 'msg_cont_2']
+
+      mockClient.im.message.patch.mockClear();
+      mockClient.im.message.create.mockClear();
+
+      // Step 2: Finalize - should reuse existing chain, not create new messages
+      await handler.finalizeStreamingMessage('msg_123', 'a'.repeat(9000), 'ABC123', 'ou_user_123');
+
+      // Should NOT create any new continuation messages
+      expect(mockClient.im.message.create).not.toHaveBeenCalled();
+
+      // Should only patch the last message (with completion note), not frozen ones
+      expect(mockClient.im.message.patch).toHaveBeenCalledTimes(1);
+      const patchCall = mockClient.im.message.patch.mock.calls[0];
+      expect(patchCall[0].path.message_id).toBe('msg_cont_2');
+    });
+
+    it('should handle finalize when new content extends beyond existing chain', async () => {
+      mockClient.im.message.patch.mockResolvedValue({});
+      mockClient.im.message.create
+        .mockResolvedValueOnce({ data: { message_id: 'msg_cont_1' } })  // from update
+        .mockResolvedValueOnce({ data: { message_id: 'msg_cont_2' } }); // from finalize
+
+      // Step 1: Stream creates 2-message chain
+      await handler.updateStreamingMessage('msg_123', 'a'.repeat(5000), 'ou_user_123');
+      // chain = ['msg_123', 'msg_cont_1']
+
+      mockClient.im.message.patch.mockClear();
+      mockClient.im.message.create.mockClear();
+      mockClient.im.message.create.mockResolvedValue({ data: { message_id: 'msg_cont_2' } });
+
+      // Step 2: Finalize with MORE content that needs a 3rd message
+      await handler.finalizeStreamingMessage('msg_123', 'a'.repeat(9000), 'ABC123', 'ou_user_123');
+
+      // Should only create 1 new message (the 3rd chunk), not recreate existing ones
+      expect(mockClient.im.message.create).toHaveBeenCalledTimes(1);
+
+      // The first message should NOT be patched (frozen)
+      // Only the transitioning message and new message should be affected
+      const patchCalls = mockClient.im.message.patch.mock.calls;
+      const patchedMessageIds = patchCalls.map((call: any) => call[0].path.message_id);
+      expect(patchedMessageIds).not.toContain('msg_123'); // First message stays frozen
+    });
+  });
+
   describe('splitTextIntoChunks', () => {
     it('should return single chunk for short text', () => {
       const chunks = (handler as any).splitTextIntoChunks('Short message', 4000);

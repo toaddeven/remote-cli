@@ -634,6 +634,24 @@ Examples:
       // Split text into chunks
       const chunks = this.splitTextIntoChunks(finalText);
 
+      // Use lastProcessedLengths to determine which messages are frozen
+      // Same logic as updateStreamingMessage to ensure consistency
+      const lastProcessedLength = this.lastProcessedLengths.get(messageId) || 0;
+
+      let lastProcessedChunkIndex = 0;
+      if (lastProcessedLength > 0) {
+        let cumulative = 0;
+        for (let i = 0; i < chunks.length; i++) {
+          cumulative += chunks[i].length;
+          if (lastProcessedLength <= cumulative) {
+            lastProcessedChunkIndex = i;
+            break;
+          }
+          // If lastProcessedLength exceeds all chunks, point to last chunk
+          lastProcessedChunkIndex = i;
+        }
+      }
+
       // Update existing messages and create new ones as needed
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
@@ -666,16 +684,22 @@ Examples:
         }
 
         if (i < chain.length) {
-          // Update existing message in chain
-          await this.client.im.message.patch({
-            path: { message_id: chain[i] },
-            data: {
-              content: JSON.stringify({
-                config: { wide_screen_mode: true },
-                elements,
-              }),
-            },
-          });
+          // This is an existing message in the chain
+          // Only update if it's at or after the last processed chunk index
+          // Messages before that are frozen and should not be re-patched
+          const shouldUpdate = isLastChunk || i >= lastProcessedChunkIndex;
+
+          if (shouldUpdate) {
+            await this.client.im.message.patch({
+              path: { message_id: chain[i] },
+              data: {
+                content: JSON.stringify({
+                  config: { wide_screen_mode: true },
+                  elements,
+                }),
+              },
+            });
+          }
         } else if (openId) {
           // Create new message for additional chunks
           const prefix = `_⬅️ Continued from previous message..._\n\n`;
