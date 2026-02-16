@@ -221,6 +221,31 @@ export class ClaudeCodeHooks extends EventEmitter {
     super();
     // Increase max listeners to support multiple adapter instances in tests
     this.setMaxListeners(100);
+
+    // Debug: Log all emitted events
+    const originalEmit = this.emit.bind(this);
+    this.emit = function(event: string | symbol, ...args: any[]) {
+      const timestamp = new Date().toISOString();
+      const eventName = String(event);
+
+      // Don't log full context objects to keep logs readable
+      if (args.length > 0) {
+        const summary = args.map(arg => {
+          if (typeof arg === 'object' && arg !== null) {
+            if ('taskId' in arg) return `{taskId: ${arg.taskId}}`;
+            if ('toolName' in arg) return `{toolName: ${arg.toolName}}`;
+            if ('actionType' in arg) return `{actionType: ${arg.actionType}}`;
+            return '{object}';
+          }
+          return arg;
+        });
+        console.log(`[ClaudeCodeHooks ${timestamp}] Event emitted: ${eventName}`, summary);
+      } else {
+        console.log(`[ClaudeCodeHooks ${timestamp}] Event emitted: ${eventName}`);
+      }
+
+      return originalEmit(event, ...args);
+    } as any;
   }
 
   /**
@@ -299,16 +324,27 @@ export class ClaudeCodeHooks extends EventEmitter {
    * Request authorization for an operation
    */
   async requestAuthorization(context: AuthorizationContext): Promise<AuthorizationDecision> {
+    // Debug: Log authorization request
+    const timestamp = new Date().toISOString();
+    console.log(`[ClaudeCodeHooks ${timestamp}] Authorization requested:`, {
+      actionType: context.actionType,
+      description: context.description,
+      riskLevel: context.riskLevel,
+      details: context.details,
+    });
+
     // Check cache first
     const cacheKey = this.getAuthorizationCacheKey(context);
     const cached = this.authorizationCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
+      console.log(`[ClaudeCodeHooks ${timestamp}] Using cached authorization decision: granted=${cached.decision.granted}`);
       this.emit(HookEventType.AUTHORIZATION_GRANTED, context, cached.decision);
       return cached.decision;
     }
 
     // No handler registered, default to deny for safety
     if (!this.authorizationHandler) {
+      console.log(`[ClaudeCodeHooks ${timestamp}] No authorization handler registered, denying by default`);
       const denyDecision: AuthorizationDecision = {
         granted: false,
         reason: 'No authorization handler registered',
@@ -318,7 +354,9 @@ export class ClaudeCodeHooks extends EventEmitter {
     }
 
     try {
+      console.log(`[ClaudeCodeHooks ${timestamp}] Calling authorization handler...`);
       const decision = await this.authorizationHandler(context);
+      console.log(`[ClaudeCodeHooks ${timestamp}] Authorization handler returned: granted=${decision.granted}, reason=${decision.reason || 'none'}`);
 
       // Emit event
       if (decision.granted) {
@@ -334,11 +372,13 @@ export class ClaudeCodeHooks extends EventEmitter {
           decision,
           expiresAt: duration > 0 ? Date.now() + duration : Number.MAX_SAFE_INTEGER,
         });
+        console.log(`[ClaudeCodeHooks ${timestamp}] Cached authorization decision for key: ${cacheKey}`);
       }
 
       return decision;
     } catch (error) {
       // Handler threw error, deny for safety
+      console.error(`[ClaudeCodeHooks ${timestamp}] Authorization handler threw error:`, error);
       const denyDecision: AuthorizationDecision = {
         granted: false,
         reason: `Authorization handler error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -381,13 +421,23 @@ export class ClaudeCodeHooks extends EventEmitter {
    * Returns false to prevent execution
    */
   async checkToolExecution(context: ToolExecutionContext): Promise<boolean> {
+    const timestamp = new Date().toISOString();
+    console.log(`[ClaudeCodeHooks ${timestamp}] Checking tool execution:`, {
+      toolName: context.toolName,
+      params: context.params,
+      taskId: context.taskId,
+    });
+
     const handlers = this.listeners(HookEventType.TOOL_BEFORE_EXECUTION) as ToolBeforeExecutionHandler[];
+    console.log(`[ClaudeCodeHooks ${timestamp}] Found ${handlers.length} tool before execution handlers`);
 
     for (const handler of handlers) {
       try {
         const result = await handler(context);
+        console.log(`[ClaudeCodeHooks ${timestamp}] Handler returned:`, result);
         // If any handler returns false, prevent execution
         if (result === false) {
+          console.log(`[ClaudeCodeHooks ${timestamp}] Tool execution blocked by handler`);
           return false;
         }
       } catch (error) {
@@ -396,6 +446,7 @@ export class ClaudeCodeHooks extends EventEmitter {
       }
     }
 
+    console.log(`[ClaudeCodeHooks ${timestamp}] Tool execution allowed`);
     return true;
   }
 
@@ -417,13 +468,25 @@ export class ClaudeCodeHooks extends EventEmitter {
    * Request user confirmation
    */
   async requestConfirmation(request: ConfirmationRequest): Promise<boolean> {
+    const timestamp = new Date().toISOString();
+    console.log(`[ClaudeCodeHooks ${timestamp}] Confirmation requested:`, {
+      prompt: request.prompt,
+      description: request.description,
+      defaultValue: request.defaultValue,
+      timeout: request.timeout,
+    });
+
     if (!this.confirmationHandler) {
       // Default to false if no handler
+      console.log(`[ClaudeCodeHooks ${timestamp}] No confirmation handler registered, returning false`);
       return false;
     }
 
     try {
-      return await this.confirmationHandler(request);
+      console.log(`[ClaudeCodeHooks ${timestamp}] Calling confirmation handler...`);
+      const result = await this.confirmationHandler(request);
+      console.log(`[ClaudeCodeHooks ${timestamp}] Confirmation handler returned: ${result}`);
+      return result;
     } catch (error) {
       console.error('[ClaudeCodeHooks] Confirmation handler error:', error);
       return false;
@@ -434,13 +497,24 @@ export class ClaudeCodeHooks extends EventEmitter {
    * Request user input
    */
   async requestUserInput(request: UserInputRequest): Promise<string | null> {
+    const timestamp = new Date().toISOString();
+    console.log(`[ClaudeCodeHooks ${timestamp}] User input requested:`, {
+      prompt: request.prompt,
+      type: request.type,
+      timeout: request.timeout,
+    });
+
     if (!this.userInputHandler) {
       // Default to null if no handler
+      console.log(`[ClaudeCodeHooks ${timestamp}] No user input handler registered, returning null`);
       return null;
     }
 
     try {
-      return await this.userInputHandler(request);
+      console.log(`[ClaudeCodeHooks ${timestamp}] Calling user input handler...`);
+      const result = await this.userInputHandler(request);
+      console.log(`[ClaudeCodeHooks ${timestamp}] User input handler returned: ${result ? '<input received>' : 'null'}`);
+      return result;
     } catch (error) {
       console.error('[ClaudeCodeHooks] User input handler error:', error);
       return null;
