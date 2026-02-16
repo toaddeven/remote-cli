@@ -25,6 +25,10 @@ export class FeishuLongConnHandler {
   private connectionHub: ConnectionHub | null = null;
   private appId: string;
   private appSecret: string;
+  // Feishu message size limit (4000 chars per message)
+  private readonly FEISHU_MESSAGE_LIMIT = 4000;
+  // Track message chains: messageId -> [messageId1, messageId2, ...]
+  private messageChains: Map<string, string[]> = new Map();
 
   constructor(config: FeishuLongConnHandlerConfig) {
     this.appId = config.appId;
@@ -443,27 +447,124 @@ Examples:
   }
 
   /**
-   * Update streaming message content
+   * Split text into chunks that fit within Feishu's message size limit
+   * Tries to split at newlines to keep context intact
    */
-  async updateStreamingMessage(messageId: string, text: string): Promise<boolean> {
+  private splitTextIntoChunks(text: string, limit: number = this.FEISHU_MESSAGE_LIMIT): string[] {
+    if (text.length <= limit) {
+      return [text];
+    }
+
+    const chunks: string[] = [];
+    let remainingText = text;
+
+    while (remainingText.length > 0) {
+      if (remainingText.length <= limit) {
+        chunks.push(remainingText);
+        break;
+      }
+
+      // Try to find a good split point (newline, space, or just at limit)
+      let splitPoint = limit;
+
+      // Look for last newline before limit
+      const lastNewline = remainingText.lastIndexOf('\n', limit);
+      if (lastNewline > limit * 0.7) { // Only split at newline if it's not too far back
+        splitPoint = lastNewline + 1;
+      } else {
+        // Look for last space before limit
+        const lastSpace = remainingText.lastIndexOf(' ', limit);
+        if (lastSpace > limit * 0.8) { // Only split at space if it's close to limit
+          splitPoint = lastSpace + 1;
+        }
+      }
+
+      chunks.push(remainingText.substring(0, splitPoint));
+      remainingText = remainingText.substring(splitPoint);
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Update streaming message content
+   * Automatically creates new messages if content exceeds Feishu's size limit
+   */
+  async updateStreamingMessage(messageId: string, text: string, openId?: string): Promise<boolean> {
     try {
-      await this.client.im.message.patch({
-        path: { message_id: messageId },
-        data: {
-          content: JSON.stringify({
-            config: { wide_screen_mode: true },
-            elements: [
-              {
-                tag: 'div',
-                text: {
-                  tag: 'lark_md',
-                  content: text.substring(0, 4000), // Limit to 4000 chars
-                },
-              },
-            ],
-          }),
-        },
-      });
+      // Get or initialize message chain
+      let chain = this.messageChains.get(messageId);
+      if (!chain) {
+        chain = [messageId]; // First message in chain
+        this.messageChains.set(messageId, chain);
+      }
+
+      // Split text into chunks
+      const chunks = this.splitTextIntoChunks(text);
+
+      // Update existing messages and create new ones as needed
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const isLastChunk = i === chunks.length - 1;
+
+        // Add continuation indicator if not the last chunk
+        const content = isLastChunk ? chunk : `${chunk}\n\n_➡️ Continued in next message..._`;
+
+        if (i < chain.length) {
+          // Update existing message in chain
+          await this.client.im.message.patch({
+            path: { message_id: chain[i] },
+            data: {
+              content: JSON.stringify({
+                config: { wide_screen_mode: true },
+                elements: [
+                  {
+                    tag: 'div',
+                    text: {
+                      tag: 'lark_md',
+                      content,
+                    },
+                  },
+                ],
+              }),
+            },
+          });
+        } else if (openId) {
+          // Create new message for additional chunks
+          const prefix = `_⬅️ Continued from previous message..._\n\n`;
+          const newContent = isLastChunk ? `${prefix}${chunk}` : `${prefix}${chunk}\n\n_➡️ Continued in next message..._`;
+
+          const result = await this.client.im.message.create({
+            params: { receive_id_type: 'open_id' },
+            data: {
+              receive_id: openId,
+              msg_type: 'interactive',
+              content: JSON.stringify({
+                config: { wide_screen_mode: true },
+                elements: [
+                  {
+                    tag: 'div',
+                    text: {
+                      tag: 'lark_md',
+                      content: newContent,
+                    },
+                  },
+                ],
+              }),
+            },
+          });
+
+          const newMessageId = result?.data?.message_id;
+          if (newMessageId) {
+            chain.push(newMessageId);
+            console.log(`[FeishuHandler] Created continuation message ${newMessageId} for chain (part ${i + 1}/${chunks.length})`);
+          }
+        } else {
+          console.warn(`[FeishuHandler] Cannot create continuation message: openId not provided`);
+          break;
+        }
+      }
+
       return true;
     } catch (error: any) {
       console.error('Failed to update streaming message:', error?.message || error);
@@ -473,41 +574,121 @@ Examples:
 
   /**
    * Finalize streaming message
+   * Automatically creates new messages if content exceeds Feishu's size limit
    */
-  async finalizeStreamingMessage(messageId: string, finalText: string, sessionAbbr?: string): Promise<boolean> {
+  async finalizeStreamingMessage(messageId: string, finalText: string, sessionAbbr?: string, openId?: string): Promise<boolean> {
     try {
+      // Get or initialize message chain
+      let chain = this.messageChains.get(messageId);
+      if (!chain) {
+        chain = [messageId];
+        this.messageChains.set(messageId, chain);
+      }
+
       // Build note content with session abbreviation if available
       let noteContent = '✅ Completed';
       if (sessionAbbr) {
         noteContent += ` · Session: ${sessionAbbr}`;
       }
 
-      await this.client.im.message.patch({
-        path: { message_id: messageId },
-        data: {
-          content: JSON.stringify({
-            config: { wide_screen_mode: true },
+      // Split text into chunks
+      const chunks = this.splitTextIntoChunks(finalText);
+
+      // Update existing messages and create new ones as needed
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const isLastChunk = i === chunks.length - 1;
+
+        // Add continuation indicator if not the last chunk
+        const content = isLastChunk ? chunk : `${chunk}\n\n_➡️ Continued in next message..._`;
+
+        // Only add completion note to the last chunk
+        const elements: any[] = [
+          {
+            tag: 'div',
+            text: {
+              tag: 'lark_md',
+              content,
+            },
+          },
+        ];
+
+        if (isLastChunk) {
+          elements.push({
+            tag: 'note',
             elements: [
               {
-                tag: 'div',
-                text: {
-                  tag: 'lark_md',
-                  content: finalText.substring(0, 4000),
-                },
-              },
-              {
-                tag: 'note',
-                elements: [
-                  {
-                    tag: 'plain_text',
-                    content: noteContent,
-                  },
-                ],
+                tag: 'plain_text',
+                content: noteContent,
               },
             ],
-          }),
-        },
-      });
+          });
+        }
+
+        if (i < chain.length) {
+          // Update existing message in chain
+          await this.client.im.message.patch({
+            path: { message_id: chain[i] },
+            data: {
+              content: JSON.stringify({
+                config: { wide_screen_mode: true },
+                elements,
+              }),
+            },
+          });
+        } else if (openId) {
+          // Create new message for additional chunks
+          const prefix = `_⬅️ Continued from previous message..._\n\n`;
+          const newContent = isLastChunk ? `${prefix}${chunk}` : `${prefix}${chunk}\n\n_➡️ Continued in next message..._`;
+
+          const newElements: any[] = [
+            {
+              tag: 'div',
+              text: {
+                tag: 'lark_md',
+                content: newContent,
+              },
+            },
+          ];
+
+          if (isLastChunk) {
+            newElements.push({
+              tag: 'note',
+              elements: [
+                {
+                  tag: 'plain_text',
+                  content: noteContent,
+                },
+              ],
+            });
+          }
+
+          const result = await this.client.im.message.create({
+            params: { receive_id_type: 'open_id' },
+            data: {
+              receive_id: openId,
+              msg_type: 'interactive',
+              content: JSON.stringify({
+                config: { wide_screen_mode: true },
+                elements: newElements,
+              }),
+            },
+          });
+
+          const newMessageId = result?.data?.message_id;
+          if (newMessageId) {
+            chain.push(newMessageId);
+            console.log(`[FeishuHandler] Created final continuation message ${newMessageId} for chain (part ${i + 1}/${chunks.length})`);
+          }
+        } else {
+          console.warn(`[FeishuHandler] Cannot create continuation message: openId not provided`);
+          break;
+        }
+      }
+
+      // Clean up message chain tracking
+      this.messageChains.delete(messageId);
+
       return true;
     } catch (error: any) {
       console.error('Failed to finalize streaming message:', error?.message || error);

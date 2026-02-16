@@ -392,7 +392,8 @@ export class RouterServer {
     if (shouldUpdate && streamData.feishuMessageId) {
       await this.feishuLongConnHandler.updateStreamingMessage(
         streamData.feishuMessageId,
-        streamData.buffer
+        streamData.buffer,
+        openId // Pass openId for creating continuation messages
       );
       this.lastStreamUpdateTime.set(messageId, now);
       streamData.hasUpdated = true; // Mark as updated
@@ -416,7 +417,8 @@ export class RouterServer {
         await this.feishuLongConnHandler.finalizeStreamingMessage(
           feishuMessageId,
           finalContent,
-          sessionAbbr
+          sessionAbbr,
+          openId // Pass openId for creating continuation messages
         );
       } else {
         // Update card with error message
@@ -426,7 +428,8 @@ export class RouterServer {
         await this.feishuLongConnHandler.finalizeStreamingMessage(
           feishuMessageId,
           errorContent,
-          undefined
+          undefined,
+          openId // Pass openId for creating continuation messages
         );
       }
     }
