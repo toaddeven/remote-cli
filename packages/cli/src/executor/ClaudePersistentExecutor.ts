@@ -517,6 +517,10 @@ export class ClaudePersistentExecutor extends EventEmitter {
    */
   private handleOutputLine(line: string): void {
     try {
+      // Debug: Print raw stream-json data with timestamp before parsing
+      const timestamp = new Date().toISOString();
+      console.log(`[ClaudePersistent RAW ${timestamp}] ${line}`);
+
       const message: ClaudeOutputMessage = JSON.parse(line);
 
       // Reset timeout on any activity to prevent timeout during long tasks
