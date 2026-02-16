@@ -204,6 +204,10 @@ export class RouterServer {
               break;
 
             case MessageType.HEARTBEAT:
+              // Update last active time for the device
+              if (deviceId) {
+                this.connectionHub.updateLastActive(deviceId);
+              }
               // Respond to heartbeat
               ws.send(JSON.stringify({
                 type: MessageType.HEARTBEAT,

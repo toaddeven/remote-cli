@@ -272,6 +272,45 @@ describe('ConnectionHub', () => {
     });
   });
 
+  describe('updateLastActive', () => {
+    it('should update last active time for online device', async () => {
+      const deviceId = 'dev_test_001';
+
+      hub.registerConnection(deviceId, mockWs);
+
+      const before = hub.getLastActiveTime(deviceId)!;
+
+      // Wait a bit to ensure time difference
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      hub.updateLastActive(deviceId);
+
+      const after = hub.getLastActiveTime(deviceId)!;
+      expect(after).toBeGreaterThan(before);
+    });
+
+    it('should not throw when updating non-existent device', () => {
+      expect(() => {
+        hub.updateLastActive('non_existent_device');
+      }).not.toThrow();
+    });
+
+    it('should prevent cleanup when last active time is updated', async () => {
+      const deviceId = 'dev_test_001';
+
+      hub.registerConnection(deviceId, mockWs);
+
+      // Simulate time passing by updating last active to now
+      hub.updateLastActive(deviceId);
+
+      // Cleanup with 1ms timeout - device should not be cleaned up
+      // because we just updated the last active time
+      hub.cleanupStaleConnections(1);
+
+      expect(hub.isDeviceOnline(deviceId)).toBe(true);
+    });
+  });
+
   describe('cleanupStaleConnections', () => {
     it('should remove connections inactive for longer than timeout', () => {
       const deviceId = 'dev_test_001';

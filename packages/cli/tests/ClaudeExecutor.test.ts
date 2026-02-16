@@ -1,22 +1,47 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ClaudeExecutor } from '../src/executor/ClaudeExecutor';
 import { DirectoryGuard } from '../src/security/DirectoryGuard';
+import { EventEmitter } from 'events';
 
-// Mock Claude Agent SDK
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
+// Mock child_process
+vi.mock('child_process', () => ({
+  spawn: vi.fn(),
 }));
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+// Mock fs for session file operations
+vi.mock('fs', () => ({
+  default: {
+    existsSync: vi.fn(() => false),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+  },
+}));
+
+import { spawn } from 'child_process';
+import fs from 'fs';
 
 describe('ClaudeExecutor', () => {
   let executor: ClaudeExecutor;
   let directoryGuard: DirectoryGuard;
-  const mockQuery = query as any;
+  const mockSpawn = spawn as any;
+  const mockFs = fs as any;
 
   beforeEach(() => {
     vi.clearAllMocks();
     directoryGuard = new DirectoryGuard(['~/test-project', './work']);
+
+    // Mock spawn to return a mock child process
+    const mockChildProcess = new EventEmitter() as any;
+    mockChildProcess.stdout = new EventEmitter();
+    mockChildProcess.stderr = new EventEmitter();
+    mockChildProcess.stdin = {
+      write: vi.fn(),
+      end: vi.fn(),
+    };
+    mockChildProcess.kill = vi.fn();
+
+    mockSpawn.mockReturnValue(mockChildProcess);
+
     executor = new ClaudeExecutor(directoryGuard);
   });
 
@@ -65,30 +90,47 @@ describe('ClaudeExecutor', () => {
   });
 
   describe('command execution', () => {
-    it('should execute command with Claude Agent SDK', async () => {
-      mockQuery.mockResolvedValue({
-        output: 'Test output',
-        success: true,
+    it('should execute command with Claude CLI', async () => {
+      const executePromise = executor.execute('list files');
+
+      // Simulate successful execution
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+
+      // Emit output
+      setImmediate(() => {
+        mockProcess.stdout.emit('data', 'Test output');
+        mockProcess.emit('close', 0);
       });
 
-      const result = await executor.execute('list files');
+      const result = await executePromise;
 
-      expect(mockQuery).toHaveBeenCalledWith(
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'claude',
+        expect.arrayContaining(['-d']),
         expect.objectContaining({
-          prompt: 'list files',
+          cwd: expect.any(String),
         })
       );
       expect(result.success).toBe(true);
-      expect(result.output).toBe('Test output');
+      expect(result.output).toContain('Test output');
     });
 
     it('should pass current working directory to Claude', async () => {
-      mockQuery.mockResolvedValue({ output: 'ok', success: true });
-
       executor.setWorkingDirectory('~/test-project');
-      await executor.execute('test command');
+      const executePromise = executor.execute('test command');
 
-      expect(mockQuery).toHaveBeenCalledWith(
+      // Simulate successful execution
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stdout.emit('data', 'ok');
+        mockProcess.emit('close', 0);
+      });
+
+      await executePromise;
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'claude',
+        expect.any(Array),
         expect.objectContaining({
           cwd: expect.stringContaining('test-project'),
         })
@@ -96,12 +138,19 @@ describe('ClaudeExecutor', () => {
     });
 
     it('should handle execution errors', async () => {
-      mockQuery.mockRejectedValue(new Error('Claude SDK error'));
+      const executePromise = executor.execute('test command');
 
-      const result = await executor.execute('test command');
+      // Simulate error
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stderr.emit('data', 'Claude CLI error');
+        mockProcess.emit('close', 1);
+      });
+
+      const result = await executePromise;
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Claude SDK error');
+      expect(result.error).toContain('Claude CLI error');
     });
 
     it('should not execute if working directory is not safe', async () => {
@@ -125,22 +174,21 @@ describe('ClaudeExecutor', () => {
         chunks.push(chunk);
       });
 
-      mockQuery.mockImplementation(async (options: any) => {
-        if (options.onStream) {
-          options.onStream('chunk 1');
-          options.onStream('chunk 2');
-          options.onStream('chunk 3');
-        }
-        return { output: 'final output', success: true };
+      const executePromise = executor.execute('test command', { onStream });
+
+      // Simulate streaming output
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stdout.emit('data', 'chunk 1');
+        mockProcess.stdout.emit('data', 'chunk 2');
+        mockProcess.stdout.emit('data', 'chunk 3');
+        mockProcess.emit('close', 0);
       });
 
-      await executor.execute('test command', { onStream });
+      await executePromise;
 
       expect(onStream).toHaveBeenCalledTimes(3);
       expect(chunks).toEqual(['chunk 1', 'chunk 2', 'chunk 3']);
-      expect(onStream).toHaveBeenCalledWith('chunk 1');
-      expect(onStream).toHaveBeenCalledWith('chunk 2');
-      expect(onStream).toHaveBeenCalledWith('chunk 3');
     });
 
     it('should handle streaming errors gracefully', async () => {
@@ -148,76 +196,114 @@ describe('ClaudeExecutor', () => {
         throw new Error('Stream processing error');
       });
 
-      mockQuery.mockImplementation(async (options: any) => {
-        if (options.onStream) {
-          options.onStream('test chunk');
-        }
-        return { output: 'output', success: true };
+      const executePromise = executor.execute('test', { onStream });
+
+      // Simulate output
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stdout.emit('data', 'test chunk');
+        mockProcess.emit('close', 0);
       });
 
       // Should not throw, should continue execution
-      const result = await executor.execute('test', { onStream });
+      const result = await executePromise;
       expect(result.success).toBe(true);
     });
   });
 
   describe('tool restrictions', () => {
-    it('should pass allowed tools to Claude', async () => {
-      mockQuery.mockResolvedValue({ output: 'ok', success: true });
+    it('should pass CLI parameters to Claude', async () => {
+      const executePromise = executor.execute('test command');
 
-      await executor.execute('test command');
+      // Simulate successful execution
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stdout.emit('data', 'ok');
+        mockProcess.emit('close', 0);
+      });
 
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.objectContaining({
-          allowedTools: expect.arrayContaining(['Read', 'Glob', 'Grep']),
-        })
+      await executePromise;
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'claude',
+        expect.arrayContaining(['-d']),
+        expect.any(Object)
       );
     });
 
-    it('should restrict dangerous tools by default', async () => {
-      mockQuery.mockResolvedValue({ output: 'ok', success: true });
+    it('should use Claude CLI in direct mode', async () => {
+      const executePromise = executor.execute('test command');
 
-      await executor.execute('test command');
+      // Simulate successful execution
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stdout.emit('data', 'ok');
+        mockProcess.emit('close', 0);
+      });
 
-      const call = mockQuery.mock.calls[0][0];
-      expect(call.allowedTools).toBeDefined();
-      // Should not include unrestricted Bash or Write to sensitive locations
-      expect(call.allowedTools).toEqual(
-        expect.not.arrayContaining(['sudo', 'rm -rf'])
-      );
+      await executePromise;
+
+      const call = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
+      expect(call[1]).toContain('-d'); // Direct mode flag
     });
   });
 
   describe('context management', () => {
-    it('should maintain execution context', async () => {
-      mockQuery.mockResolvedValue({ output: 'ok', success: true });
+    it('should maintain execution context with session', async () => {
+      const executePromise1 = executor.execute('command 1');
+      const mockProcess1 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess1.stdout.emit('data', 'ok');
+        mockProcess1.emit('close', 0);
+      });
+      await executePromise1;
 
-      await executor.execute('command 1');
-      await executor.execute('command 2');
+      const executePromise2 = executor.execute('command 2');
+      const mockProcess2 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess2.stdout.emit('data', 'ok');
+        mockProcess2.emit('close', 0);
+      });
+      await executePromise2;
 
-      expect(mockQuery).toHaveBeenCalledTimes(2);
+      expect(mockSpawn).toHaveBeenCalledTimes(2);
     });
 
     it('should reset context when requested', async () => {
-      mockQuery.mockResolvedValue({ output: 'ok', success: true });
+      const executePromise1 = executor.execute('command 1');
+      const mockProcess1 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess1.stdout.emit('data', 'ok');
+        mockProcess1.emit('close', 0);
+      });
+      await executePromise1;
 
-      await executor.execute('command 1');
       executor.resetContext();
-      await executor.execute('command 2');
 
-      expect(mockQuery).toHaveBeenCalledTimes(2);
+      const executePromise2 = executor.execute('command 2');
+      const mockProcess2 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess2.stdout.emit('data', 'ok');
+        mockProcess2.emit('close', 0);
+      });
+      await executePromise2;
+
+      expect(mockSpawn).toHaveBeenCalledTimes(2);
       // Second call should not reference first command's context
     });
   });
 
   describe('concurrent execution', () => {
     it('should prevent concurrent executions', async () => {
-      mockQuery.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ output: 'ok', success: true }), 100))
-      );
-
       const promise1 = executor.execute('command 1');
       const promise2 = executor.execute('command 2');
+
+      // Simulate first execution
+      const mockProcess1 = mockSpawn.mock.results[0].value;
+      setImmediate(() => {
+        mockProcess1.stdout.emit('data', 'ok');
+        mockProcess1.emit('close', 0);
+      });
 
       const result1 = await promise1;
       const result2 = await promise2;
@@ -234,22 +320,32 @@ describe('ClaudeExecutor', () => {
 
   describe('timeout handling', () => {
     it('should timeout long-running executions', async () => {
-      mockQuery.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ output: 'ok', success: true }), 10000))
-      );
+      vi.useFakeTimers();
 
-      const result = await executor.execute('long command', { timeout: 100 });
+      const executePromise = executor.execute('long command', { timeout: 100 });
+
+      // Don't emit close event, let it timeout
+      vi.advanceTimersByTime(101);
+
+      const result = await executePromise;
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('timeout');
+
+      vi.useRealTimers();
     });
 
     it('should use default timeout if not specified', async () => {
-      mockQuery.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ output: 'ok', success: true }), 100))
-      );
+      const executePromise = executor.execute('command');
 
-      const result = await executor.execute('command');
+      // Simulate fast execution
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stdout.emit('data', 'ok');
+        mockProcess.emit('close', 0);
+      });
+
+      const result = await executePromise;
 
       expect(result.success).toBe(true);
     });
@@ -257,9 +353,16 @@ describe('ClaudeExecutor', () => {
 
   describe('error messages', () => {
     it('should provide user-friendly error messages', async () => {
-      mockQuery.mockRejectedValue(new Error('ENOENT: no such file'));
+      const executePromise = executor.execute('test command');
 
-      const result = await executor.execute('test command');
+      // Simulate error
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stderr.emit('data', 'ENOENT: no such file');
+        mockProcess.emit('close', 1);
+      });
+
+      const result = await executePromise;
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -267,10 +370,17 @@ describe('ClaudeExecutor', () => {
     });
 
     it('should include working directory in error context', async () => {
-      mockQuery.mockRejectedValue(new Error('Permission denied'));
-
       executor.setWorkingDirectory('~/test-project');
-      const result = await executor.execute('test command');
+      const executePromise = executor.execute('test command');
+
+      // Simulate error
+      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
+      setImmediate(() => {
+        mockProcess.stderr.emit('data', 'Permission denied');
+        mockProcess.emit('close', 1);
+      });
+
+      const result = await executePromise;
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();

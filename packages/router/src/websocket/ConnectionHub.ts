@@ -99,6 +99,16 @@ export class ConnectionHub {
   }
 
   /**
+   * Update device last active time
+   * @param deviceId Device unique identifier
+   */
+  updateLastActive(deviceId: string): void {
+    if (this.connections.has(deviceId)) {
+      this.lastActiveMap.set(deviceId, Date.now());
+    }
+  }
+
+  /**
    * Get connection statistics
    * @returns Connection statistics
    */

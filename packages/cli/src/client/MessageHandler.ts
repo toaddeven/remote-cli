@@ -53,8 +53,8 @@ export class MessageHandler {
     }
 
     // Validate message structure
-    if (!this.isValidMessage(message)) {
-      this.sendResponse(message.messageId || 'unknown', {
+    if (!message || !this.isValidMessage(message)) {
+      this.sendResponse(message?.messageId || 'unknown', {
         success: false,
         error: 'Invalid message format',
       });

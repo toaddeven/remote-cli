@@ -33,8 +33,9 @@ describe('start command', () => {
         },
       })),
       set: vi.fn(),
+      save: vi.fn().mockResolvedValue(undefined),
     };
-    (ConfigManager as any).mockImplementation(() => mockConfig);
+    vi.spyOn(ConfigManager, 'initialize').mockResolvedValue(mockConfig);
 
     mockWsClient = {
       connect: vi.fn().mockResolvedValue(undefined),
@@ -64,9 +65,12 @@ describe('start command', () => {
         daemon: false,
       });
 
-      expect(mockWsClient.connect).toHaveBeenCalledWith(
-        expect.stringContaining('test-server.com')
+      expect(WebSocketClient).toHaveBeenCalledWith(
+        'https://test-server.com',
+        'dev_test_12345',
+        expect.any(Object)
       );
+      expect(mockWsClient.connect).toHaveBeenCalled();
     });
 
     it('should fail if not initialized', async () => {
