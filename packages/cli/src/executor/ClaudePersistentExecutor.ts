@@ -611,10 +611,11 @@ export class ClaudePersistentExecutor extends EventEmitter {
         case 'assistant':
           // Assistant messages contain the actual response content
           // They can be partial (streaming) or complete
-          // partial=true: streaming chunk, partial=false or undefined: complete message
+          // Note: We don't forward text content to stream callback here because
+          // the final result will be sent via 'result' type message (scheme 2)
+          // We only process tool_use blocks here for display purposes
           const isPartial = message.partial === true;
           console.log(`[ClaudePersistent] Assistant message, partial=${isPartial}`);
-          console.log(`[ClaudePersistent] Assistant message FULL: ${JSON.stringify(message)}`);
 
           // Check for tool_use in the nested message.content array
           const contentBlocks = message.message?.content || (Array.isArray(message.content) ? message.content : null);
@@ -654,21 +655,16 @@ export class ClaudePersistentExecutor extends EventEmitter {
                   this.hasSentSeparator = true;
                 }
 
-                // Regular text content
+                // Buffer text content but don't send to stream callback
+                // The final result will be sent via 'result' type message
                 this.currentOutputBuffer.push(block.text);
-                if (this.currentStreamCallback) {
-                  this.currentStreamCallback(block.text + '\n');
-                }
               }
             }
           }
 
-          // Also handle simple string content (fallback)
+          // Also handle simple string content (fallback) - buffer only, don't stream
           if (typeof message.content === 'string' && message.content) {
             this.currentOutputBuffer.push(message.content);
-            if (this.currentStreamCallback) {
-              this.currentStreamCallback(message.content + '\n');
-            }
             this.startInputDetectionTimer(message.content);
           }
 
