@@ -24,8 +24,9 @@ export class RouterServer {
   private connectionHub: ConnectionHub;
   private bindingManager: BindingManager;
   private cleanupInterval: NodeJS.Timeout | null = null;
-  // Track streaming messages: messageId -> { openId, feishuMessageId, buffer, hasUpdated }
-  private streamingMessages: Map<string, { openId: string; feishuMessageId: string | null; buffer: string; hasUpdated: boolean }> = new Map();
+  // Track streaming messages: messageId -> { openId, feishuMessageId, buffer, hasUpdated, createdAt, deviceId }
+  private streamingMessages: Map<string, { openId: string; feishuMessageId: string | null; buffer: string; hasUpdated: boolean; createdAt: number; deviceId: string }> = new Map();
+  private readonly STREAMING_SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes timeout
 
   constructor(config: ConfigManager, store: JsonStore) {
     this.config = config;
@@ -45,11 +46,11 @@ export class RouterServer {
     this.feishuLongConnHandler.setConnectionHub(this.connectionHub);
 
     // Register callback for streaming message start
-    this.feishuLongConnHandler.setOnStartStreaming((messageId: string, openId: string, feishuMessageId: string | null) => {
-      console.log(`[RouterServer] Registering streaming session: msgId=${messageId}, feishuMsgId=${feishuMessageId}`);
+    this.feishuLongConnHandler.setOnStartStreaming((messageId: string, openId: string, feishuMessageId: string | null, deviceId: string) => {
+      console.log(`[RouterServer] Registering streaming session: msgId=${messageId}, feishuMsgId=${feishuMessageId}, deviceId=${deviceId}`);
       // Register this message as a streaming message so chunks and response update the same card
       // hasUpdated starts as false to ensure first content is immediately shown
-      this.streamingMessages.set(messageId, { openId, feishuMessageId, buffer: '', hasUpdated: false });
+      this.streamingMessages.set(messageId, { openId, feishuMessageId, buffer: '', hasUpdated: false, createdAt: Date.now(), deviceId });
       console.log(`[RouterServer] Total streaming sessions: ${this.streamingMessages.size}`);
     });
 
@@ -294,6 +295,8 @@ export class RouterServer {
         if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
         if (deviceId) {
           this.connectionHub.unregisterConnection(deviceId);
+          // Clean up any streaming sessions for this device
+          this.cleanupStreamingSessionsForDevice(deviceId);
           console.log('Device disconnected:', deviceId);
         }
       });
@@ -333,6 +336,8 @@ export class RouterServer {
     this.cleanupInterval = setInterval(() => {
       // Cleanup connections that haven't sent heartbeat in 3x interval
       this.connectionHub.cleanupStaleConnections(heartbeatInterval * 3);
+      // Cleanup stale streaming sessions
+      this.cleanupStaleStreamingSessions();
     }, heartbeatInterval);
 
     console.log(`\n🚀 Router server started successfully!`);
@@ -428,6 +433,49 @@ export class RouterServer {
     // Clean up
     this.streamingMessages.delete(messageId);
     this.lastStreamUpdateTime.delete(messageId);
+  }
+
+  /**
+   * Cleanup stale streaming sessions that have timed out
+   * This prevents memory leaks when devices disconnect without sending a response
+   */
+  private cleanupStaleStreamingSessions(): void {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [messageId, session] of this.streamingMessages.entries()) {
+      if (now - session.createdAt > this.STREAMING_SESSION_TIMEOUT_MS) {
+        console.log(`[RouterServer] Cleaning up stale streaming session: ${messageId}`);
+        this.streamingMessages.delete(messageId);
+        this.lastStreamUpdateTime.delete(messageId);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`[RouterServer] Cleaned up ${cleanedCount} stale streaming sessions, remaining: ${this.streamingMessages.size}`);
+    }
+  }
+
+  /**
+   * Cleanup streaming sessions for a specific device when it disconnects
+   * @param deviceId Device ID that disconnected
+   */
+  private cleanupStreamingSessionsForDevice(deviceId: string): void {
+    let cleanedCount = 0;
+
+    for (const [messageId, session] of this.streamingMessages.entries()) {
+      if (session.deviceId === deviceId) {
+        console.log(`[RouterServer] Cleaning up streaming session for disconnected device: ${messageId}`);
+        this.streamingMessages.delete(messageId);
+        this.lastStreamUpdateTime.delete(messageId);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`[RouterServer] Cleaned up ${cleanedCount} streaming sessions for device ${deviceId}, remaining: ${this.streamingMessages.size}`);
+    }
   }
 
   /**

@@ -50,12 +50,12 @@ export class FeishuLongConnHandler {
   /**
    * Callback to register streaming message with RouterServer
    */
-  private onStartStreaming?: (messageId: string, openId: string, feishuMessageId: string | null) => void;
+  private onStartStreaming?: (messageId: string, openId: string, feishuMessageId: string | null, deviceId: string) => void;
 
   /**
    * Set streaming start callback
    */
-  setOnStartStreaming(callback: (messageId: string, openId: string, feishuMessageId: string | null) => void): void {
+  setOnStartStreaming(callback: (messageId: string, openId: string, feishuMessageId: string | null, deviceId: string) => void): void {
     this.onStartStreaming = callback;
   }
 
@@ -190,7 +190,7 @@ export class FeishuLongConnHandler {
       const feishuMessageId = await this.sendStreamingStart(openId, `🤔 Executing ${command}...`);
       console.log(`[FeishuHandler] Created card ${feishuMessageId} for slash command ${commandMessageId}`);
       if (this.onStartStreaming) {
-        this.onStartStreaming(commandMessageId, openId, feishuMessageId);
+        this.onStartStreaming(commandMessageId, openId, feishuMessageId, binding.deviceId);
       }
 
       // Send slash command to device - the client will execute it locally
@@ -347,7 +347,7 @@ Examples:
       const feishuMessageId = await this.sendStreamingStart(openId, '🤔 Processing...');
       console.log(`[FeishuHandler] Created card ${feishuMessageId} for command ${commandMessageId}`);
       if (this.onStartStreaming) {
-        this.onStartStreaming(commandMessageId, openId, feishuMessageId);
+        this.onStartStreaming(commandMessageId, openId, feishuMessageId, binding.deviceId);
       }
 
       // Send command to device
