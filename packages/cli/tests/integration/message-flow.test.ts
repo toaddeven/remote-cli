@@ -77,10 +77,9 @@ describe('Integration: Message Flow', () => {
 
       expect(wsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg_001',
           success: true,
-          output: 'Task completed successfully',
         })
       );
     });
@@ -99,7 +98,7 @@ describe('Integration: Message Flow', () => {
       expect(executor.execute).not.toHaveBeenCalled();
       expect(wsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg_002',
           success: false,
           error: expect.stringContaining('whitelist'),
@@ -163,13 +162,12 @@ describe('Integration: Message Flow', () => {
         })
       );
 
-      // Verify final result
+      // Verify final result (no output in response since it was streamed)
       expect(wsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg_003',
           success: true,
-          output: 'All tests passed',
         })
       );
 
@@ -195,7 +193,7 @@ describe('Integration: Message Flow', () => {
 
       expect(wsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg_004',
           success: false,
           error: 'Execution timeout',
@@ -307,7 +305,7 @@ describe('Integration: Message Flow', () => {
       // Second command should be rejected
       expect(wsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg_009',
           success: false,
           error: expect.stringContaining('busy'),
@@ -380,7 +378,7 @@ describe('Integration: Message Flow', () => {
       expect(executor.execute).not.toHaveBeenCalled();
       expect(wsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg_012',
           success: false,
           error: expect.stringContaining('whitelist'),

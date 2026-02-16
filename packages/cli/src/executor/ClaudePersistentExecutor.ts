@@ -611,9 +611,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
         case 'assistant':
           // Assistant messages contain the actual response content
           // They can be partial (streaming) or complete
-          // Note: We don't forward text content to stream callback here because
-          // the final result will be sent via 'result' type message (scheme 2)
-          // We only process tool_use blocks here for display purposes
+          // partial=true: streaming chunk, partial=false or undefined: complete message
           const isPartial = message.partial === true;
           console.log(`[ClaudePersistent] Assistant message, partial=${isPartial}`);
 
@@ -655,16 +653,21 @@ export class ClaudePersistentExecutor extends EventEmitter {
                   this.hasSentSeparator = true;
                 }
 
-                // Buffer text content but don't send to stream callback
-                // The final result will be sent via 'result' type message
+                // Stream text content to callback for real-time display
                 this.currentOutputBuffer.push(block.text);
+                if (this.currentStreamCallback) {
+                  this.currentStreamCallback(block.text);
+                }
               }
             }
           }
 
-          // Also handle simple string content (fallback) - buffer only, don't stream
+          // Also handle simple string content (fallback)
           if (typeof message.content === 'string' && message.content) {
             this.currentOutputBuffer.push(message.content);
+            if (this.currentStreamCallback) {
+              this.currentStreamCallback(message.content);
+            }
             this.startInputDetectionTimer(message.content);
           }
 

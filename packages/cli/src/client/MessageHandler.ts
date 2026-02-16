@@ -434,7 +434,11 @@ You can also use natural language commands to control Claude Code CLI.`,
         },
       });
 
-      this.sendResponse(messageId, result);
+      // Only send success status, not the output
+      // Output has already been streamed via onStream callback
+      this.sendResponse(messageId, {
+        success: result.success,
+      });
     } catch (error) {
       this.sendResponse(messageId, {
         success: false,
