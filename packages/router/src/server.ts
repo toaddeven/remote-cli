@@ -26,7 +26,7 @@ export class RouterServer {
   private cleanupInterval: NodeJS.Timeout | null = null;
   // Track streaming messages: messageId -> { openId, feishuMessageId, buffer, hasUpdated, createdAt, deviceId }
   private streamingMessages: Map<string, { openId: string; feishuMessageId: string | null; buffer: string; hasUpdated: boolean; createdAt: number; deviceId: string }> = new Map();
-  private readonly STREAMING_SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes timeout
+  private readonly STREAMING_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes timeout
 
   constructor(config: ConfigManager, store: JsonStore) {
     this.config = config;
@@ -367,8 +367,9 @@ export class RouterServer {
       return;
     }
 
-    // Accumulate chunk
+    // Accumulate chunk and update session activity time
     streamData.buffer += chunk;
+    streamData.createdAt = Date.now(); // Update activity timestamp to prevent timeout
 
     // Determine if we should update the card now
     const now = Date.now();
