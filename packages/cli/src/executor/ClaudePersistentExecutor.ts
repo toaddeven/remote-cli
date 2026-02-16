@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import { claudeCodeHooks } from '../hooks/ClaudeCodeHooks';
+import { formatToolUseMessage, formatToolResultMessage, createResponseSeparator } from '../utils/FeishuMessageFormatter';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -159,6 +160,10 @@ export class ClaudePersistentExecutor extends EventEmitter {
   private currentCommandResolve?: (result: PersistentClaudeResult) => void;
   private currentCommandReject?: (error: Error) => void;
   private currentTimeoutTimer?: NodeJS.Timeout;
+
+  // Track tool execution state for separator insertion
+  private hasSeenToolUse = false;
+  private hasSentSeparator = false;
 
   // Current task context for hooks
   private currentTaskId: string | null = null;
@@ -610,8 +615,15 @@ export class ClaudePersistentExecutor extends EventEmitter {
             for (const block of contentBlocks) {
               if (block.type === 'tool_use') {
                 console.log(`[ClaudePersistent] Tool use detected: ${block.name}, id=${block.id}`);
-                // Send tool use notification to user
-                const toolMsg = `🔧 Tool: ${block.name}\nInput: ${JSON.stringify(block.input, null, 2)}`;
+                // Mark that we've seen a tool use
+                this.hasSeenToolUse = true;
+
+                // Format tool use message with beautiful formatting
+                const toolMsg = formatToolUseMessage({
+                  name: block.name || 'unknown',
+                  id: block.id || 'unknown',
+                  input: block.input || {}
+                });
                 if (this.currentStreamCallback) {
                   this.currentStreamCallback('\n' + toolMsg + '\n');
                 }
@@ -622,6 +634,17 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 // The tool will be executed by Claude CLI, and we'll receive the result in a 'user' message
                 // with tool_result content. We should emit the hook when we receive tool_result.
               } else if (block.type === 'text' && block.text) {
+                // If we've seen tool use but haven't sent separator yet, send it now
+                // This indicates Claude is now providing the final response after tool execution
+                if (this.hasSeenToolUse && !this.hasSentSeparator) {
+                  const separator = createResponseSeparator();
+                  this.currentOutputBuffer.push(separator);
+                  if (this.currentStreamCallback) {
+                    this.currentStreamCallback(separator);
+                  }
+                  this.hasSentSeparator = true;
+                }
+
                 // Regular text content
                 this.currentOutputBuffer.push(block.text);
                 if (this.currentStreamCallback) {
@@ -661,8 +684,12 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 console.log(`[ClaudePersistent] Tool result received: tool_use_id=${block.id}, is_error=${isError}`);
                 console.log(`[ClaudePersistent] Tool result full: ${JSON.stringify(message).substring(0, 500)}`);
 
-                // Display tool result to user
-                const resultMsg = `${isError ? '❌' : '✅'} Tool Result (${block.id}):\n${block.content || '(no content)'}`;
+                // Display tool result to user with beautiful formatting
+                const resultMsg = formatToolResultMessage({
+                  id: block.id || 'unknown',
+                  content: block.content || '(no content)',
+                  isError: isError
+                });
                 if (this.currentStreamCallback) {
                   this.currentStreamCallback('\n' + resultMsg + '\n');
                 }
@@ -934,6 +961,9 @@ export class ClaudePersistentExecutor extends EventEmitter {
       this.inputDetectionTimer = undefined;
     }
     this.isWaitingForInput = false;
+    // Reset tool execution tracking flags
+    this.hasSeenToolUse = false;
+    this.hasSentSeparator = false;
     // Note: currentTaskId and currentTaskStartTime are cleared separately after hooks
   }
 
