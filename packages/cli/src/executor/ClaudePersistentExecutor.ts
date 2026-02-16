@@ -609,7 +609,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
           if (contentBlocks && contentBlocks.length > 0) {
             for (const block of contentBlocks) {
               if (block.type === 'tool_use') {
-                console.log(`[ClaudePersistent] Tool use detected: ${block.name}`);
+                console.log(`[ClaudePersistent] Tool use detected: ${block.name}, id=${block.id}`);
                 // Send tool use notification to user
                 const toolMsg = `🔧 Tool: ${block.name}\nInput: ${JSON.stringify(block.input, null, 2)}`;
                 if (this.currentStreamCallback) {
@@ -617,20 +617,10 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 }
                 this.currentOutputBuffer.push(toolMsg);
 
-                // Emit hook for tool execution
-                claudeCodeHooks.notifyToolExecuted(
-                  {
-                    toolName: block.name || 'unknown',
-                    params: block.input || {},
-                    timestamp: Date.now(),
-                    taskId: this.currentTaskId || undefined,
-                  },
-                  {
-                    success: true,
-                    result: 'Tool executed',
-                    duration: 0,
-                  }
-                );
+                // NOTE: Do NOT emit tool:afterExecution hook here!
+                // tool_use is just a REQUEST to execute the tool, not the actual execution result.
+                // The tool will be executed by Claude CLI, and we'll receive the result in a 'user' message
+                // with tool_result content. We should emit the hook when we receive tool_result.
               } else if (block.type === 'text' && block.text) {
                 // Regular text content
                 this.currentOutputBuffer.push(block.text);
@@ -658,7 +648,45 @@ export class ClaudePersistentExecutor extends EventEmitter {
           break;
 
         case 'user':
-          // User messages are echo/acknowledgment of input, silently ignore
+          // User messages can contain tool_result blocks - need to process these
+          const userTimestamp = new Date().toISOString();
+          console.log(`[ClaudePersistent] User message at ${userTimestamp}, checking for tool_result...`);
+
+          // Check if this message contains tool results
+          const userContentBlocks = message.message?.content || (Array.isArray(message.content) ? message.content : null);
+          if (userContentBlocks && Array.isArray(userContentBlocks)) {
+            for (const block of userContentBlocks) {
+              if (block.type === 'tool_result') {
+                const isError = block.is_error === true;
+                console.log(`[ClaudePersistent] Tool result received: tool_use_id=${block.id}, is_error=${isError}`);
+                console.log(`[ClaudePersistent] Tool result full: ${JSON.stringify(message).substring(0, 500)}`);
+
+                // Display tool result to user
+                const resultMsg = `${isError ? '❌' : '✅'} Tool Result (${block.id}):\n${block.content || '(no content)'}`;
+                if (this.currentStreamCallback) {
+                  this.currentStreamCallback('\n' + resultMsg + '\n');
+                }
+                this.currentOutputBuffer.push(resultMsg);
+
+                // Emit hook for tool execution completion (this is the ACTUAL execution result)
+                // Note: We don't have the original tool name here, but we have the tool_use_id
+                claudeCodeHooks.notifyToolExecuted(
+                  {
+                    toolName: block.id || 'unknown', // Use tool_use_id as identifier
+                    params: {}, // Original params not available in tool_result
+                    timestamp: Date.now(),
+                    taskId: this.currentTaskId || undefined,
+                  },
+                  {
+                    success: !isError,
+                    result: block.content || '',
+                    error: isError ? (block.content || 'Tool execution failed') : undefined,
+                    duration: 0, // Duration not available
+                  }
+                );
+              }
+            }
+          }
           break;
 
         default:
