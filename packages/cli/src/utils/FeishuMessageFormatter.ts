@@ -23,14 +23,226 @@ export interface ToolResultInfo {
 
 /**
  * Format tool use message as a compact indicator
- * Only shows minimal info - details will be shown on error
+ * Intelligently extracts key information based on tool type
  * @param toolUse Tool use information
  * @returns Formatted compact message string
  */
 export function formatToolUseMessage(toolUse: ToolUseInfo): string {
   const emoji = getToolEmoji(toolUse.name);
-  // Compact single-line format without blockquote prefix
-  return `${emoji} **${toolUse.name}**...`;
+  const input = toolUse.input;
+
+  // Build the message with tool name
+  let message = `${emoji} **${toolUse.name}**`;
+
+  // Extract context based on tool type and available fields
+  const context = extractToolContext(toolUse.name, input);
+
+  if (context) {
+    message += ` - ${context}`;
+  }
+
+  return message;
+}
+
+/**
+ * Extract human-readable context from tool input based on tool type
+ * @param toolName Name of the tool
+ * @param input Tool input parameters
+ * @returns Formatted context string or null
+ */
+function extractToolContext(toolName: string, input: Record<string, any>): string | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+
+  // Tool-specific handling - some tools have special logic
+  switch (toolName) {
+    case 'Bash':
+      return extractBashContext(input);
+
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+      if (typeof input.file_path === 'string' && input.file_path) {
+        return formatFilePath(input.file_path, 50);
+      }
+      break;
+
+    case 'Grep':
+      if (typeof input.pattern === 'string' && input.pattern) {
+        const path = typeof input.path === 'string' ? input.path : '.';
+        return `\`${truncate(input.pattern, 30)}\` in ${formatFilePath(path, 25)}`;
+      }
+      break;
+
+    case 'Glob':
+      if (typeof input.pattern === 'string' && input.pattern) {
+        return `\`${truncate(input.pattern, 40)}\``;
+      }
+      break;
+
+    case 'WebFetch':
+      if (typeof input.url === 'string' && input.url) {
+        return `\`${truncate(input.url, 50)}\``;
+      }
+      break;
+
+    case 'WebSearch':
+      if (typeof input.query === 'string' && input.query) {
+        return `\`${truncate(input.query, 50)}\``;
+      }
+      break;
+
+    case 'Task':
+      return extractTaskContext(input);
+
+    case 'TodoWrite':
+      if (Array.isArray(input.todos)) {
+        return `${input.todos.length} item(s)`;
+      }
+      break;
+
+    case 'AskUserQuestion':
+      if (typeof input.question === 'string' && input.question) {
+        return truncate(input.question, 50);
+      }
+      break;
+  }
+
+  // Generic fallback: description field (most tools have this)
+  if (typeof input.description === 'string' && input.description) {
+    return truncate(input.description, 50);
+  }
+
+  // Fallback: prompt field
+  if (typeof input.prompt === 'string' && input.prompt) {
+    return truncate(input.prompt, 50);
+  }
+
+  // Fallback: try to find informative string fields
+  const informativePatterns = [
+    /path|file|dir|folder/i,
+    /url|link|href/i,
+    /name|title/i,
+    /content|text|body/i,
+    /message|note/i,
+  ];
+
+  const stringFields = Object.entries(input)
+    .filter(([key, value]) => {
+      // Skip internal/meta fields and generic params
+      const skipFields = ['id', 'tool_use_id', 'timestamp', 'type', 'param1', 'param2', 'param3', 'arg1', 'arg2'];
+      if (skipFields.includes(key)) return false;
+
+      if (typeof value !== 'string' || value.length === 0) return false;
+      if (value.length > 100) return false; // Too long
+
+      // Only include if key matches informative patterns
+      return informativePatterns.some(pattern => pattern.test(key));
+    })
+    .map(([key, value]) => ({ key, value: value as string }));
+
+  if (stringFields.length > 0) {
+    // Pick the first reasonable string field
+    const field = stringFields[0];
+    return `\`${truncate(field.value, 50)}\``;
+  }
+
+  return null;
+}
+
+/**
+ * Extract context for Bash tool - shows both description and command
+ * @param input Tool input parameters
+ * @returns Formatted context string
+ */
+function extractBashContext(input: Record<string, any>): string | null {
+  const hasDescription = typeof input.description === 'string' && input.description;
+  const hasCommand = typeof input.command === 'string' && input.command;
+
+  if (hasDescription && hasCommand) {
+    // Show both: description (command)
+    const desc = truncate(input.description, 35);
+    const cmd = truncate(input.command, 30);
+    return `${desc} (\`${cmd}\`)`;
+  }
+
+  if (hasDescription) {
+    return truncate(input.description, 50);
+  }
+
+  if (hasCommand) {
+    return `\`${truncate(input.command, 50)}\``;
+  }
+
+  return null;
+}
+
+/**
+ * Extract context for Task tool
+ * @param input Tool input parameters
+ * @returns Formatted context string
+ */
+function extractTaskContext(input: Record<string, any>): string | null {
+  const hasPrompt = typeof input.prompt === 'string' && input.prompt;
+  const hasSubagent = typeof input.subagent_type === 'string' && input.subagent_type;
+
+  if (hasPrompt && hasSubagent) {
+    return `[${input.subagent_type}] ${truncate(input.prompt, 40)}`;
+  }
+
+  if (hasPrompt) {
+    return truncate(input.prompt, 50);
+  }
+
+  if (hasSubagent) {
+    return `[${input.subagent_type}]`;
+  }
+
+  return null;
+}
+
+/**
+ * Format file path for display - shows filename with smart truncation for long paths
+ * For long paths: keeps the beginning and filename, truncates the middle
+ * @param filePath Full file path
+ * @param maxLength Maximum length for the displayed path
+ * @returns Formatted path string
+ */
+function formatFilePath(filePath: string, maxLength: number): string {
+  if (filePath.length <= maxLength) {
+    return `\`${filePath}\``;
+  }
+
+  // Extract filename (last part after / or \)
+  const separator = filePath.includes('/') ? '/' : '\\';
+  const parts = filePath.split(separator);
+  const fileName = parts[parts.length - 1];
+
+  // If filename itself is too long, truncate it
+  if (fileName.length > maxLength - 5) {
+    return `\`${truncate(fileName, maxLength - 5)}\``;
+  }
+
+  // Keep the start of the path and the filename, truncate middle
+  const prefixLength = maxLength - fileName.length - 5; // 5 for "..." + separators
+  if (prefixLength > 5) {
+    const prefix = filePath.substring(0, prefixLength);
+    return `\`${prefix}.../${fileName}\``;
+  }
+
+  // Fallback: just show truncated full path
+  return `\`${truncate(filePath, maxLength)}\``;
+}
+
+/**
+ * Truncate string to max length with ellipsis
+ */
+function truncate(str: string, maxLength: number): string {
+  if (str.length <= maxLength) {
+    return str;
+  }
+  return str.substring(0, maxLength - 3) + '...';
 }
 
 /**
