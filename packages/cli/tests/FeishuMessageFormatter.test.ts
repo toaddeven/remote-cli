@@ -11,7 +11,7 @@ import {
 
 describe('FeishuMessageFormatter', () => {
   describe('formatToolUseMessage', () => {
-    it('should format tool use with emoji and parameters', () => {
+    it('should format tool use with compact indicator', () => {
       const toolUse: ToolUseInfo = {
         name: 'Bash',
         id: 'tool_123',
@@ -24,50 +24,48 @@ describe('FeishuMessageFormatter', () => {
       const result = formatToolUseMessage(toolUse);
 
       expect(result).toContain('💻'); // Bash emoji
-      expect(result).toContain('🔧 **Tool:**'); // New format includes Tool: prefix
-      expect(result).toContain('Bash'); // Tool name
-      expect(result).toContain('command: ls -la');
-      expect(result).toContain('description: List files');
-      expect(result).toContain('>'); // Should use blockquote format
+      expect(result).toContain('⏳'); // Loading indicator
+      expect(result).toContain('**Bash**'); // Tool name in bold
+      expect(result).toContain('...'); // Ellipsis
+      expect(result).not.toContain('>'); // Should NOT use blockquote format
     });
 
-    it('should truncate long string parameters', () => {
+    it('should use correct emoji for different tools', () => {
+      const tools: { name: string; emoji: string }[] = [
+        { name: 'Bash', emoji: '💻' },
+        { name: 'Read', emoji: '📖' },
+        { name: 'Write', emoji: '✍️' },
+        { name: 'Edit', emoji: '📝' },
+        { name: 'Grep', emoji: '🔍' },
+        { name: 'Glob', emoji: '📁' },
+        { name: 'Task', emoji: '🤖' },
+      ];
+
+      for (const tool of tools) {
+        const toolUse: ToolUseInfo = {
+          name: tool.name,
+          id: 'tool_123',
+          input: {}
+        };
+        const result = formatToolUseMessage(toolUse);
+        expect(result).toContain(tool.emoji);
+      }
+    });
+
+    it('should use default emoji for unknown tools', () => {
       const toolUse: ToolUseInfo = {
-        name: 'Read',
-        id: 'tool_456',
-        input: {
-          file_path: '/very/long/path/that/should/be/truncated/because/it/is/longer/than/fifty/characters/in/total/length.txt'
-        }
+        name: 'UnknownTool',
+        id: 'tool_333',
+        input: {}
       };
 
       const result = formatToolUseMessage(toolUse);
 
-      expect(result).toContain('📖'); // Read emoji
-      expect(result).toContain('...');
-      expect(result.indexOf('file_path')).toBeGreaterThan(-1);
-      // Should be truncated to 50 chars
-      const filePath = result.split('file_path: ')[1];
-      expect(filePath.length).toBeLessThanOrEqual(54); // 50 + "..."
+      expect(result).toContain('🔧'); // Default emoji
+      expect(result).toContain('**UnknownTool**'); // Tool name in bold
     });
 
-    it('should handle array and object parameters', () => {
-      const toolUse: ToolUseInfo = {
-        name: 'Task',
-        id: 'tool_789',
-        input: {
-          todos: [1, 2, 3],
-          config: { key: 'value' }
-        }
-      };
-
-      const result = formatToolUseMessage(toolUse);
-
-      expect(result).toContain('🤖'); // Task emoji
-      expect(result).toContain('todos: [array]');
-      expect(result).toContain('config: [object]');
-    });
-
-    it('should limit to 3 parameters and show remaining count', () => {
+    it('should not include parameter details in compact format', () => {
       const toolUse: ToolUseInfo = {
         name: 'Write',
         id: 'tool_111',
@@ -82,42 +80,16 @@ describe('FeishuMessageFormatter', () => {
 
       const result = formatToolUseMessage(toolUse);
 
-      expect(result).toContain('param1');
-      expect(result).toContain('param2');
-      expect(result).toContain('param3');
-      expect(result).toContain('... and 2 more');
-    });
-
-    it('should handle empty parameters', () => {
-      const toolUse: ToolUseInfo = {
-        name: 'Bash',
-        id: 'tool_222',
-        input: {}
-      };
-
-      const result = formatToolUseMessage(toolUse);
-
-      expect(result).toContain('💻');
-      expect(result).toContain('Bash'); // Tool name should be present
-      expect(result).toContain('🔧 **Tool:**'); // New format
-    });
-
-    it('should use default emoji for unknown tools', () => {
-      const toolUse: ToolUseInfo = {
-        name: 'UnknownTool',
-        id: 'tool_333',
-        input: {}
-      };
-
-      const result = formatToolUseMessage(toolUse);
-
-      expect(result).toContain('🔧'); // Default emoji
-      expect(result).toContain('UnknownTool'); // Tool name should be present
+      // Should not contain parameter details
+      expect(result).not.toContain('param1');
+      expect(result).not.toContain('value1');
+      // Should be compact
+      expect(result.length).toBeLessThan(50);
     });
   });
 
   describe('formatToolResultMessage', () => {
-    it('should format successful tool result', () => {
+    it('should format successful tool result with compact checkmark', () => {
       const result: ToolResultInfo = {
         id: 'tool_123',
         content: 'Operation completed successfully',
@@ -127,12 +99,12 @@ describe('FeishuMessageFormatter', () => {
       const formatted = formatToolResultMessage(result);
 
       expect(formatted).toContain('✅');
-      expect(formatted).toContain('**Done**'); // Changed from Success to Done
-      expect(formatted).toContain('Operation completed successfully');
-      expect(formatted).toContain('>'); // Should use blockquote format
+      expect(formatted).toContain('Done');
+      expect(formatted).not.toContain('Operation completed successfully'); // No details on success
+      expect(formatted).not.toContain('>'); // Should NOT use blockquote format
     });
 
-    it('should format failed tool result', () => {
+    it('should format failed tool result with error details', () => {
       const result: ToolResultInfo = {
         id: 'tool_456',
         content: 'Error: Something went wrong',
@@ -143,11 +115,26 @@ describe('FeishuMessageFormatter', () => {
 
       expect(formatted).toContain('❌');
       expect(formatted).toContain('**Failed**');
-      expect(formatted).toContain('Error: Something went wrong');
+      expect(formatted).toContain('Error: Something went wrong'); // Error details shown
     });
 
-    it('should truncate long content', () => {
-      const longContent = 'a'.repeat(200);
+    it('should truncate long error content', () => {
+      const longContent = 'a'.repeat(300);
+      const result: ToolResultInfo = {
+        id: 'tool_789',
+        content: longContent,
+        isError: true
+      };
+
+      const formatted = formatToolResultMessage(result);
+
+      expect(formatted).toContain('❌');
+      expect(formatted).toContain('...');
+      expect(formatted.length).toBeLessThan(250); // Truncated length
+    });
+
+    it('should not truncate success content (not shown anyway)', () => {
+      const longContent = 'a'.repeat(300);
       const result: ToolResultInfo = {
         id: 'tool_789',
         content: longContent,
@@ -156,9 +143,7 @@ describe('FeishuMessageFormatter', () => {
 
       const formatted = formatToolResultMessage(result);
 
-      expect(formatted).toContain('✅');
-      expect(formatted).toContain('...');
-      expect(formatted.length).toBeLessThan(longContent.length);
+      expect(formatted).toBe('✅ Done'); // Compact format, no content
     });
   });
 
@@ -244,14 +229,10 @@ describe('FeishuMessageFormatter', () => {
   });
 
   describe('createResponseSeparator', () => {
-    it('should create visual separator with proper formatting', () => {
+    it('should create simple visual separator', () => {
       const separator = createResponseSeparator();
 
-      expect(separator).toContain('---'); // Markdown horizontal rule
-      expect(separator).toContain('🎯'); // Target emoji
-      expect(separator).toContain('Response'); // Response heading
-      expect(separator).toContain('##'); // Heading level 2
-      expect(separator.startsWith('\n\n')).toBe(true); // Should start with newlines
+      expect(separator).toBe('\n\n'); // Simple double newline separator
     });
   });
 });

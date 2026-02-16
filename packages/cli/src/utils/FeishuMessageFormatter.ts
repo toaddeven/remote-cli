@@ -22,44 +22,43 @@ export interface ToolResultInfo {
 }
 
 /**
- * Format tool use message as a compact, readable message with visual indentation
+ * Format tool use message as a compact indicator
+ * Only shows minimal info - details will be shown on error
  * @param toolUse Tool use information
- * @returns Formatted message string with quote-style indentation
+ * @returns Formatted compact message string
  */
 export function formatToolUseMessage(toolUse: ToolUseInfo): string {
-  // Create a compact, emoji-enhanced format with indentation using blockquote
   const emoji = getToolEmoji(toolUse.name);
-  const params = formatToolParams(toolUse.input);
-
-  // Use blockquote (>) for visual separation - creates indented, gray background in Feishu
-  const lines = [`> 🔧 **Tool:** ${emoji} ${toolUse.name}`];
-  if (params) {
-    // Split params into lines and add quote prefix to each
-    const paramLines = params.split('\n').filter(line => line.trim());
-    paramLines.forEach(line => {
-      lines.push(`> ${line}`);
-    });
-  }
-
-  return lines.join('\n');
+  // Compact single-line format without blockquote prefix
+  return `${emoji} **${toolUse.name}**...`;
 }
 
 /**
  * Format tool result message as a status indicator with visual indentation
+ * Only shows details when there's an error
  * @param result Tool result information
  * @returns Formatted message string with quote-style indentation
  */
 export function formatToolResultMessage(result: ToolResultInfo): string {
-  const emoji = result.isError ? '❌' : '✅';
-  const status = result.isError ? 'Failed' : 'Done';
+  // On error, show detailed information
+  if (result.isError) {
+    // Truncate long error content
+    const content = result.content.length > 200
+      ? result.content.substring(0, 200) + '...'
+      : result.content;
+    return `❌ **Failed**: ${content}`;
+  }
 
-  // Truncate long content
-  const content = result.content.length > 80
-    ? result.content.substring(0, 80) + '...'
-    : result.content;
+  // On success, just show a compact checkmark
+  return `✅ Done`;
+}
 
-  // Use blockquote for visual separation
-  return `> ${emoji} **${status}**${content ? `: ${content}` : ''}`;
+/**
+ * Create a visual separator between tool executions
+ * @returns Formatted separator string
+ */
+export function createToolSeparator(): string {
+  return '\n────────────────────\n';
 }
 
 /**
@@ -67,7 +66,7 @@ export function formatToolResultMessage(result: ToolResultInfo): string {
  * @returns Formatted separator string
  */
 export function createResponseSeparator(): string {
-  return '\n\n---\n\n## 🎯 Response:\n';
+  return '\n\n';
 }
 
 

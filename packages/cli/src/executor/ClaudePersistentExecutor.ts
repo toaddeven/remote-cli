@@ -619,16 +619,18 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 // Mark that we've seen a tool use
                 this.hasSeenToolUse = true;
 
-                // Format tool use message with beautiful formatting
+                // Format tool use message with compact indicator
                 const toolMsg = formatToolUseMessage({
                   name: block.name || 'unknown',
                   id: block.id || 'unknown',
                   input: block.input || {}
                 });
+                // Add visual separator before tool use (not after, to keep tool_use and tool_result together)
+                const separator = '\n────────────── TOOL USE ──────────────\n';
                 if (this.currentStreamCallback) {
-                  this.currentStreamCallback('\n' + toolMsg + '\n');
+                  this.currentStreamCallback(separator + toolMsg + '\n');
                 }
-                this.currentOutputBuffer.push(toolMsg);
+                this.currentOutputBuffer.push(separator + toolMsg + '\n');
 
                 // NOTE: Do NOT emit tool:afterExecution hook here!
                 // tool_use is just a REQUEST to execute the tool, not the actual execution result.
@@ -649,7 +651,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 // Regular text content
                 this.currentOutputBuffer.push(block.text);
                 if (this.currentStreamCallback) {
-                  this.currentStreamCallback(block.text);
+                  this.currentStreamCallback(block.text + '\n');
                 }
               }
             }
@@ -659,7 +661,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
           if (typeof message.content === 'string' && message.content) {
             this.currentOutputBuffer.push(message.content);
             if (this.currentStreamCallback) {
-              this.currentStreamCallback(message.content);
+              this.currentStreamCallback(message.content + '\n');
             }
             this.startInputDetectionTimer(message.content);
           }
@@ -685,16 +687,18 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 console.log(`[ClaudePersistent] Tool result received: tool_use_id=${block.id}, is_error=${isError}`);
                 console.log(`[ClaudePersistent] Tool result full: ${JSON.stringify(message).substring(0, 500)}`);
 
-                // Display tool result to user with beautiful formatting
+                // Display tool result to user with compact format
                 const resultMsg = formatToolResultMessage({
                   id: block.id || 'unknown',
                   content: block.content || '(no content)',
                   isError: isError
                 });
+                // Add separator after tool result (separates this tool pair from next tool)
+                const separator = '\n────────────────────────────────────\n';
                 if (this.currentStreamCallback) {
-                  this.currentStreamCallback('\n' + resultMsg + '\n');
+                  this.currentStreamCallback(resultMsg + separator);
                 }
-                this.currentOutputBuffer.push(resultMsg);
+                this.currentOutputBuffer.push(resultMsg + separator);
 
                 // Emit hook for tool execution completion (this is the ACTUAL execution result)
                 // Note: We don't have the original tool name here, but we have the tool_use_id
