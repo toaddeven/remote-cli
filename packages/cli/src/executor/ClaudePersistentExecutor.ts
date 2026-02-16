@@ -312,6 +312,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
         '--output-format=stream-json',
         '--include-partial-messages',
         '--verbose',
+        '--dangerously-skip-permissions'
       ];
 
       if (this.sessionId) {

@@ -61,7 +61,7 @@ describe('WebSocketClient', () => {
       await connectPromise;
 
       expect(mockWs.send).toHaveBeenCalledWith(
-        expect.stringContaining('"type":"register"')
+        expect.stringContaining('"type":"binding_request"')
       );
       expect(mockWs.send).toHaveBeenCalledWith(
         expect.stringContaining(`"deviceId":"${deviceId}"`)
