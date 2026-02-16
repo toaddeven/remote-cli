@@ -334,8 +334,6 @@ remote-cli/
 │       ├── src/
 │       │   ├── cli.ts                     # CLI entry point
 │       │   ├── server.ts                  # Server setup
-│       │   ├── webhook/
-│       │   │   └── FeishuHandler.ts       # Feishu webhook handler
 │       │   ├── websocket/
 │       │   │   └── ConnectionHub.ts       # WebSocket connection hub
 │       │   ├── binding/
@@ -406,10 +404,10 @@ remote-cli/
 
 ### Router Server Core Files
 
-8. **`packages/router/src/webhook/FeishuHandler.ts`**
-   - Receive Feishu webhook callbacks
-   - Signature verification
-   - Message parsing and routing
+8. **`packages/router/src/feishu/FeishuLongConnHandler.ts`**
+   - Receive messages from Feishu via long connection
+   - Message parsing and routing to WebSocket clients
+   - Streaming response handling with interactive cards
 
 9. **`packages/router/src/websocket/ConnectionHub.ts`**
    - Manage all local client WebSocket connections
@@ -486,9 +484,10 @@ remote-cli/
    - Initialize `packages/router` and `packages/cli`
    - Configure TypeScript and build tools
 
-2. **Implement Feishu Webhook Reception** ✅
-   - `packages/router/src/webhook/FeishuHandler.ts`
-   - Signature verification, event parsing
+2. **Implement Feishu Long Connection Reception** ✅
+   - `packages/router/src/feishu/FeishuLongConnHandler.ts`
+   - Long connection to Feishu for real-time message receiving
+   - Message parsing and routing to WebSocket clients
 
 3. **Implement WebSocket Hub** ✅
    - `packages/router/src/websocket/ConnectionHub.ts`

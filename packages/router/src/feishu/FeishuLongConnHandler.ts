@@ -472,8 +472,16 @@ Examples:
   /**
    * Split text into chunks that fit within Feishu's message size limit
    * Tries to split at newlines to keep context intact
+   *
+   * Reserves space for continuation indicators:
+   * - "~➡️ Continued in next message...~" (40 chars) at end of non-final chunks
+   * - "~⬅️ Continued from previous message...~" (44 chars) at start of continuation chunks
    */
   private splitTextIntoChunks(text: string, limit: number = this.FEISHU_MESSAGE_LIMIT): string[] {
+    // Reserve space for continuation indicator
+    const continuationOverhead = 50; // "\n\n_➡️ Continued in next message..._"
+    const effectiveLimit = limit - continuationOverhead;
+
     if (text.length <= limit) {
       return [text];
     }
@@ -488,16 +496,16 @@ Examples:
       }
 
       // Try to find a good split point (newline, space, or just at limit)
-      let splitPoint = limit;
+      let splitPoint = effectiveLimit;
 
       // Look for last newline before limit
-      const lastNewline = remainingText.lastIndexOf('\n', limit);
-      if (lastNewline > limit * 0.7) { // Only split at newline if it's not too far back
+      const lastNewline = remainingText.lastIndexOf('\n', effectiveLimit);
+      if (lastNewline > effectiveLimit * 0.7) { // Only split at newline if it's not too far back
         splitPoint = lastNewline + 1;
       } else {
         // Look for last space before limit
-        const lastSpace = remainingText.lastIndexOf(' ', limit);
-        if (lastSpace > limit * 0.8) { // Only split at space if it's close to limit
+        const lastSpace = remainingText.lastIndexOf(' ', effectiveLimit);
+        if (lastSpace > effectiveLimit * 0.8) { // Only split at space if it's close to limit
           splitPoint = lastSpace + 1;
         }
       }

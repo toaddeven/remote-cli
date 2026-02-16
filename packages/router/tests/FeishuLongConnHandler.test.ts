@@ -260,12 +260,12 @@ describe('FeishuLongConnHandler', () => {
       mockClient.im.message.patch.mockResolvedValue({});
       mockClient.im.message.create.mockResolvedValue({ data: { message_id: 'msg_456' } });
 
-      const veryLongContent = 'a'.repeat(12000); // Requires 3 chunks
+      const veryLongContent = 'a'.repeat(12000); // Requires 4 chunks (with 50-char overhead per chunk)
       const result = await handler.finalizeStreamingMessage('msg_123', veryLongContent, undefined, 'ou_user_123');
 
       expect(result).toBe(true);
       expect(mockClient.im.message.patch).toHaveBeenCalledTimes(1);
-      expect(mockClient.im.message.create).toHaveBeenCalledTimes(2); // 2 continuation messages
+      expect(mockClient.im.message.create).toHaveBeenCalledTimes(3); // 3 continuation messages
     });
 
     it('should not create continuation message without openId', async () => {

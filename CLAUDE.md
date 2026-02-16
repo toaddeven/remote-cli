@@ -192,11 +192,10 @@ packages/router/src/
   binding/       # User-device binding management (BindingManager)
   commands/      # Router CLI commands (config, start, stop, status)
   config/        # Router configuration management
-  feishu/        # Feishu API client and long connection handler
+  feishu/        # Feishu API client and long connection handler (FeishuLongConnHandler)
   storage/       # Data persistence (JsonStore, MemoryStore)
   types/         # TypeScript type definitions
   utils/         # Utility functions (PidManager)
-  webhook/       # Feishu webhook handler
   websocket/     # WebSocket connection hub
 ```
 
@@ -215,11 +214,10 @@ packages/router/tests/
 
 ### Router Server
 The router server is fully implemented with:
-- `webhook/FeishuHandler.ts`: Handle Feishu webhook callbacks
 - `websocket/ConnectionHub.ts`: Manage WebSocket connections from local clients
 - `binding/BindingManager.ts`: Manage user-device bindings with JSON file storage
 - `feishu/FeishuClient.ts`: Feishu API wrapper for sending messages
-- `feishu/FeishuLongConnHandler.ts`: Feishu long connection handler
+- `feishu/FeishuLongConnHandler.ts`: Feishu long connection handler (receives messages from Feishu and routes to clients)
 - `storage/JsonStore.ts`: Persistent JSON file storage (replaces Redis)
 - `storage/MemoryStore.ts`: In-memory storage with TTL support
 - `utils/PidManager.ts`: Server process management
