@@ -141,7 +141,7 @@ export class FeishuHandler {
       // Verify binding code
       const bindingCode = await this.bindingManager.verifyBindingCode(code);
       if (!bindingCode) {
-        await this.feishuClient.replyToMessage(messageId, '❌ Binding code is invalid or expired, please generate a new one');
+        await this.feishuClient.replyToMessage(messageId, '❌ Invalid binding code. Please check and try again, or generate a new binding code.');
         return;
       }
 
@@ -155,7 +155,7 @@ export class FeishuHandler {
       );
     } catch (error) {
       console.error('Error binding user:', error);
-      await this.feishuClient.replyToMessage(messageId, '❌ Binding failed, please try again later');
+      await this.feishuClient.replyToMessage(messageId, '❌ Binding Failed. Please try again later.');
     }
   }
 
@@ -198,7 +198,7 @@ export class FeishuHandler {
       });
 
       if (!success) {
-        await this.feishuClient.replyToMessage(messageId, '❌ Command sending failed, please try again later');
+        await this.feishuClient.replyToMessage(messageId, '❌ Failed to send command. Please try again later.');
       }
     } catch (error) {
       console.error('Error handling regular command:', error);
@@ -225,7 +225,7 @@ export class FeishuHandler {
       const isOnline = this.connectionHub.isDeviceOnline(binding.deviceId);
       const status = isOnline ? '🟢 Online' : '🔴 Offline';
 
-      const message = `📊 Device Status\n\nDevice Name: ${binding.deviceName}\nDevice ID: ${binding.deviceId}\nStatus: ${status}\nBinding Time: ${new Date(binding.boundAt).toLocaleString('en-US')}`;
+      const message = `📊 Device Status\n\nDevice Name: ${binding.deviceName}\nDevice ID: ${binding.deviceId}\nStatus: ${isOnline ? '🟢 online' : '🔴 offline'}\nBinding Time: ${new Date(binding.boundAt).toLocaleString('en-US')}`;
 
       await this.feishuClient.replyToMessage(messageId, message);
     } catch (error) {
@@ -250,7 +250,7 @@ export class FeishuHandler {
       await this.bindingManager.unbindUser(openId);
       await this.feishuClient.replyToMessage(
         messageId,
-        `✅ Device ${binding.deviceName} has been unbound`
+        `✅ Unbind successful. Device ${binding.deviceName} has been unbound.`
       );
     } catch (error) {
       console.error('Error handling unbind command:', error);

@@ -1,32 +1,33 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BindingManager } from '../src/binding/BindingManager';
-import Redis from 'ioredis';
-
-// Mock Redis
-vi.mock('ioredis');
+import { JsonStore } from '../src/storage/JsonStore';
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
 
 describe('BindingManager', () => {
   let bindingManager: BindingManager;
-  let mockRedis: any;
+  let store: JsonStore;
+  let testDir: string;
 
-  beforeEach(() => {
-    mockRedis = {
-      hgetall: vi.fn(),
-      hmset: vi.fn(),
-      hset: vi.fn(),
-      del: vi.fn(),
-      set: vi.fn(),
-      get: vi.fn(),
-      exists: vi.fn(),
-      expire: vi.fn()
-    };
+  beforeEach(async () => {
+    // Create a temporary directory for test data
+    testDir = path.join(os.tmpdir(), `binding-test-${Date.now()}`);
+    await fs.mkdir(testDir, { recursive: true });
 
-    (Redis as any).mockImplementation(() => mockRedis);
-    bindingManager = new BindingManager('redis://localhost:6379');
+    const storePath = path.join(testDir, 'bindings.json');
+    store = new JsonStore(storePath);
+    await store.initialize();
+    bindingManager = new BindingManager(store);
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
+  afterEach(async () => {
+    // Clean up test directory
+    try {
+      await fs.rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
   });
 
   describe('generateBindingCode', () => {
@@ -43,40 +44,27 @@ describe('BindingManager', () => {
       expect(bindingCode.expiresAt).toBe(bindingCode.createdAt + 5 * 60 * 1000); // Expires in 5 minutes
     });
 
-    it('should store binding code in Redis', async () => {
+    it('should store binding code in store', async () => {
       const deviceId = 'dev_test_123';
       const deviceName = 'Test-Device';
 
-      mockRedis.set.mockResolvedValue('OK');
-      mockRedis.expire.mockResolvedValue(1);
-
       const bindingCode = await bindingManager.generateBindingCode(deviceId, deviceName);
 
-      expect(mockRedis.set).toHaveBeenCalledWith(
-        `binding:code:${bindingCode.code}`,
-        expect.any(String)
-      );
-      expect(mockRedis.expire).toHaveBeenCalledWith(
-        `binding:code:${bindingCode.code}`,
-        300 // 5 minutes
-      );
+      // Verify the code can be retrieved
+      const retrieved = await bindingManager.verifyBindingCode(bindingCode.code);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved?.deviceId).toBe(deviceId);
     });
   });
 
   describe('verifyBindingCode', () => {
     it('should verify valid binding code', async () => {
-      const code = 'ABC-123-XYZ';
       const deviceId = 'dev_test_123';
-      const validBindingCode = {
-        code,
-        deviceId,
-        createdAt: Date.now(),
-        expiresAt: Date.now() + 5 * 60 * 1000
-      };
 
-      mockRedis.get.mockResolvedValue(JSON.stringify(validBindingCode));
+      // Generate a code first
+      const bindingCode = await bindingManager.generateBindingCode(deviceId, 'Test-Device');
 
-      const result = await bindingManager.verifyBindingCode(code);
+      const result = await bindingManager.verifyBindingCode(bindingCode.code);
 
       expect(result).not.toBeNull();
       expect(result?.deviceId).toBe(deviceId);
@@ -91,7 +79,8 @@ describe('BindingManager', () => {
         expiresAt: Date.now() - 5 * 60 * 1000 // Already expired
       };
 
-      mockRedis.get.mockResolvedValue(JSON.stringify(expiredBindingCode));
+      // Store expired code directly
+      await store.setBindingCode(code, expiredBindingCode);
 
       const result = await bindingManager.verifyBindingCode(code);
 
@@ -100,8 +89,6 @@ describe('BindingManager', () => {
 
     it('should reject non-existent binding code', async () => {
       const code = 'INVALID-CODE';
-
-      mockRedis.get.mockResolvedValue(null);
 
       const result = await bindingManager.verifyBindingCode(code);
 
@@ -115,76 +102,50 @@ describe('BindingManager', () => {
       const deviceId = 'dev_test_123';
       const deviceName = 'Test-Device';
 
-      mockRedis.hmset.mockResolvedValue('OK');
-      mockRedis.hset.mockResolvedValue(1);
-
       await bindingManager.bindUser(openId, deviceId, deviceName);
 
-      expect(mockRedis.hmset).toHaveBeenCalledWith(
-        `binding:user:${openId}`,
-        expect.objectContaining({
-          openId,
-          deviceId,
-          deviceName
-        })
-      );
+      // Verify binding was created
+      const binding = await bindingManager.getUserBinding(openId);
+      expect(binding).not.toBeNull();
+      expect(binding?.openId).toBe(openId);
+      expect(binding?.deviceId).toBe(deviceId);
+      expect(binding?.deviceName).toBe(deviceName);
     });
 
     it('should update existing binding', async () => {
       const openId = 'ou_test_user';
       const oldDeviceId = 'dev_old_123';
       const newDeviceId = 'dev_new_456';
-      const deviceName = 'New-Device';
 
-      mockRedis.hgetall.mockResolvedValue({
-        openId,
-        deviceId: oldDeviceId,
-        deviceName: 'Old-Device',
-        boundAt: String(Date.now() - 10000)
-      });
-      mockRedis.hmset.mockResolvedValue('OK');
-      mockRedis.del.mockResolvedValue(1);
+      // Create initial binding
+      await bindingManager.bindUser(openId, oldDeviceId, 'Old-Device');
 
-      await bindingManager.bindUser(openId, newDeviceId, deviceName);
+      // Update to new device
+      await bindingManager.bindUser(openId, newDeviceId, 'New-Device');
 
-      // Should delete old device binding
-      expect(mockRedis.del).toHaveBeenCalledWith(`binding:device:${oldDeviceId}`);
-
-      // Should create new device binding
-      expect(mockRedis.hmset).toHaveBeenCalledWith(
-        `binding:user:${openId}`,
-        expect.objectContaining({
-          deviceId: newDeviceId,
-          deviceName
-        })
-      );
+      // Verify new binding
+      const binding = await bindingManager.getUserBinding(openId);
+      expect(binding?.deviceId).toBe(newDeviceId);
+      expect(binding?.deviceName).toBe('New-Device');
     });
   });
 
   describe('getUserBinding', () => {
     it('should get user binding information', async () => {
       const openId = 'ou_test_user';
-      const expectedBinding = {
-        openId,
-        deviceId: 'dev_test_123',
-        deviceName: 'Test-Device',
-        boundAt: String(Date.now()),
-        lastActiveAt: String(Date.now())
-      };
+      const deviceId = 'dev_test_123';
 
-      mockRedis.hgetall.mockResolvedValue(expectedBinding);
+      await bindingManager.bindUser(openId, deviceId, 'Test-Device');
 
       const binding = await bindingManager.getUserBinding(openId);
 
       expect(binding).not.toBeNull();
       expect(binding?.openId).toBe(openId);
-      expect(binding?.deviceId).toBe('dev_test_123');
+      expect(binding?.deviceId).toBe(deviceId);
     });
 
     it('should return null when user is not bound', async () => {
       const openId = 'ou_unbound_user';
-
-      mockRedis.hgetall.mockResolvedValue({});
 
       const binding = await bindingManager.getUserBinding(openId);
 
@@ -194,21 +155,24 @@ describe('BindingManager', () => {
 
   describe('getDeviceBinding', () => {
     it('should get device binding information', async () => {
-      const deviceId = 'dev_test_123';
       const openId = 'ou_test_user';
+      const deviceId = 'dev_test_123';
 
-      mockRedis.hgetall.mockResolvedValue({
-        openId,
-        deviceId,
-        deviceName: 'Test-Device',
-        boundAt: String(Date.now())
-      });
+      await bindingManager.bindUser(openId, deviceId, 'Test-Device');
 
       const binding = await bindingManager.getDeviceBinding(deviceId);
 
       expect(binding).not.toBeNull();
       expect(binding?.deviceId).toBe(deviceId);
       expect(binding?.openId).toBe(openId);
+    });
+
+    it('should return null when device is not bound', async () => {
+      const deviceId = 'dev_unbound_123';
+
+      const binding = await bindingManager.getDeviceBinding(deviceId);
+
+      expect(binding).toBeNull();
     });
   });
 
@@ -217,45 +181,64 @@ describe('BindingManager', () => {
       const openId = 'ou_test_user';
       const deviceId = 'dev_test_123';
 
-      mockRedis.hgetall.mockResolvedValue({
-        openId,
-        deviceId,
-        deviceName: 'Test-Device',
-        boundAt: String(Date.now())
-      });
-      mockRedis.del.mockResolvedValue(1);
-
+      await bindingManager.bindUser(openId, deviceId, 'Test-Device');
       await bindingManager.unbindUser(openId);
 
-      expect(mockRedis.del).toHaveBeenCalledWith(`binding:user:${openId}`);
-      expect(mockRedis.del).toHaveBeenCalledWith(`binding:device:${deviceId}`);
+      // Verify user binding is removed
+      const userBinding = await bindingManager.getUserBinding(openId);
+      expect(userBinding).toBeNull();
+
+      // Verify device binding is also removed
+      const deviceBinding = await bindingManager.getDeviceBinding(deviceId);
+      expect(deviceBinding).toBeNull();
     });
 
     it('should ignore unbound user', async () => {
       const openId = 'ou_unbound_user';
 
-      mockRedis.hgetall.mockResolvedValue({});
-
-      await bindingManager.unbindUser(openId);
-
-      // Should not call delete operations
-      expect(mockRedis.del).not.toHaveBeenCalled();
+      // Should not throw error
+      await expect(bindingManager.unbindUser(openId)).resolves.not.toThrow();
     });
   });
 
   describe('updateLastActive', () => {
     it('should update user last active time', async () => {
       const openId = 'ou_test_user';
+      const deviceId = 'dev_test_123';
 
-      mockRedis.hset.mockResolvedValue(1);
+      await bindingManager.bindUser(openId, deviceId, 'Test-Device');
+
+      const beforeUpdate = Date.now();
+      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
 
       await bindingManager.updateLastActive(openId);
 
-      expect(mockRedis.hset).toHaveBeenCalledWith(
-        `binding:user:${openId}`,
-        'lastActiveAt',
-        expect.any(String)
-      );
+      const binding = await bindingManager.getUserBinding(openId);
+      expect(binding?.lastActiveAt).toBeGreaterThanOrEqual(beforeUpdate);
+    });
+
+    it('should not throw for unbound user', async () => {
+      const openId = 'ou_unbound_user';
+
+      await expect(bindingManager.updateLastActive(openId)).resolves.not.toThrow();
+    });
+  });
+
+  describe('close', () => {
+    it('should flush data to disk', async () => {
+      const openId = 'ou_test_user';
+      const deviceId = 'dev_test_123';
+
+      await bindingManager.bindUser(openId, deviceId, 'Test-Device');
+      await bindingManager.close();
+
+      // Verify file exists
+      const storePath = path.join(testDir, 'bindings.json');
+      const content = await fs.readFile(storePath, 'utf-8');
+      const data = JSON.parse(content);
+
+      expect(data.userBindings[openId]).toBeDefined();
+      expect(data.userBindings[openId].deviceId).toBe(deviceId);
     });
   });
 });
