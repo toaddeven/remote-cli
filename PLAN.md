@@ -60,7 +60,7 @@ Developers want to remotely control Claude Code CLI on their work computers via 
 
 #### 1. Router Server
 - **Responsibilities**: Message forwarding, user binding management, device connection management
-- **Tech Stack**: Node.js + Koa + WebSocket + Redis
+- **Tech Stack**: Node.js + Koa + WebSocket + JSON file storage
 - **Deployment**: One cloud server within the team (2 cores 4GB is sufficient)
 
 #### 2. Local Client (remote-cli)
@@ -108,7 +108,7 @@ interface BindingCode {
   expiresAt: number;
 }
 
-// Binding Record (stored in Redis)
+// Binding Record (stored in JSON file)
 interface UserBinding {
   openId: string;         // Feishu user open_id
   deviceId: string;       // Device unique identifier
@@ -302,43 +302,66 @@ remote-cli/
 │   │   │   ├── commands/
 │   │   │   │   ├── init.ts               # Initialization and binding
 │   │   │   │   ├── start.ts              # Start service
-│   │   │   │   ├── config.ts             # Configuration management
-│   │   │   │   └── autostart.ts          # Auto-start on boot
+│   │   │   │   ├── stop.ts               # Stop service
+│   │   │   │   ├── status.ts             # Service status
+│   │   │   │   └── config.ts             # Configuration management
 │   │   │   ├── client/
 │   │   │   │   ├── WebSocketClient.ts    # WebSocket client
 │   │   │   │   └── MessageHandler.ts     # Message handler
 │   │   │   ├── executor/
-│   │   │   │   └── ClaudeExecutor.ts     # Claude Code executor
+│   │   │   │   ├── index.ts              # Executor factory
+│   │   │   │   ├── ClaudeExecutor.ts     # Spawn mode executor
+│   │   │   │   └── ClaudePersistentExecutor.ts  # Persistent mode executor
+│   │   │   ├── hooks/
+│   │   │   │   ├── index.ts              # Hook exports
+│   │   │   │   ├── ClaudeCodeHooks.ts    # Claude Code event hooks
+│   │   │   │   └── FeishuNotificationAdapter.ts  # Feishu notification adapter
 │   │   │   ├── security/
-│   │   │   │   ├── DirectoryGuard.ts     # Directory security guard
-│   │   │   │   └── CommandFilter.ts      # Command filter
+│   │   │   │   └── DirectoryGuard.ts     # Directory security guard
 │   │   │   ├── config/
 │   │   │   │   └── ConfigManager.ts      # Configuration manager
-│   │   │   └── daemon/
-│   │   │       └── DaemonManager.ts      # Background service manager
+│   │   │   ├── types/
+│   │   │   │   ├── index.ts              # Message type definitions
+│   │   │   │   └── config.ts             # Config type definitions
+│   │   │   └── utils/
+│   │   │       ├── FeishuMessageFormatter.ts  # Feishu message formatting
+│   │   │       └── stripAnsi.ts          # ANSI escape code stripping
 │   │   ├── bin/
 │   │   │   └── remote-cli.js             # CLI executable
 │   │   └── package.json
 │   │
 │   └── router/                            # Router server
 │       ├── src/
-│       │   ├── index.ts                   # Server entry point
+│       │   ├── cli.ts                     # CLI entry point
+│       │   ├── server.ts                  # Server setup
 │       │   ├── webhook/
 │       │   │   └── FeishuHandler.ts       # Feishu webhook handler
 │       │   ├── websocket/
 │       │   │   └── ConnectionHub.ts       # WebSocket connection hub
 │       │   ├── binding/
 │       │   │   └── BindingManager.ts      # Binding manager
-│       │   └── feishu/
-│       │       └── FeishuClient.ts        # Feishu API client
-│       ├── Dockerfile
+│       │   ├── commands/
+│       │   │   ├── config.ts              # Router config command
+│       │   │   ├── start.ts               # Router start command
+│       │   │   ├── stop.ts                # Router stop command
+│       │   │   └── status.ts              # Router status command
+│       │   ├── config/
+│       │   │   └── ConfigManager.ts       # Router config manager
+│       │   ├── feishu/
+│       │   │   ├── FeishuClient.ts        # Feishu API client
+│       │   │   └── FeishuLongConnHandler.ts  # Feishu long connection
+│       │   ├── storage/
+│       │   │   ├── JsonStore.ts           # Persistent JSON file storage
+│       │   │   └── MemoryStore.ts         # In-memory storage with TTL
+│       │   ├── types/
+│       │   │   ├── index.ts               # Type definitions
+│       │   │   └── config.ts              # Config types
+│       │   └── utils/
+│       │       └── PidManager.ts          # Process ID management
+│       ├── bin/
+│       │   └── remote-cli-router.js       # Router CLI executable
 │       └── package.json
 │
-├── docs/
-│   ├── installation.md                    # Installation guide
-│   ├── configuration.md                   # Configuration guide
-│   └── troubleshooting.md                 # Troubleshooting
-├── docker-compose.yml                     # Router server deployment
 └── package.json                           # Monorepo root configuration
 ```
 
@@ -353,46 +376,60 @@ remote-cli/
    - Keep-alive heartbeat, auto-reconnect
    - Message send/receive
 
-2. **`packages/cli/src/executor/ClaudeExecutor.ts`**
-   - Invoke Claude Agent SDK's `query()` API
-   - Build secure execution environment
-   - Stream output processing
+2. **`packages/cli/src/executor/ClaudeExecutor.ts`** (spawn mode)
+   - Spawn new Claude CLI process per command
+   - Uses `--print` mode with `--resume`
+   - Fallback when running inside Claude Code
 
-3. **`packages/cli/src/security/DirectoryGuard.ts`**
+3. **`packages/cli/src/executor/ClaudePersistentExecutor.ts`** (persistent mode, default)
+   - Maintain long-running Claude process with stream-json I/O
+   - Bidirectional JSON streaming via stdin/stdout
+   - Faster response times, no process spawn overhead
+
+4. **`packages/cli/src/security/DirectoryGuard.ts`**
    - Path normalization and validation
    - Whitelist checking
    - Prevent path traversal attacks
 
-4. **`packages/cli/src/commands/init.ts`**
+5. **`packages/cli/src/commands/init.ts`**
    - Generate device ID and binding code
    - Guide user through binding process
    - Initialize configuration file
 
-5. **`packages/cli/src/daemon/DaemonManager.ts`**
-   - Use PM2 to manage background process
-   - Auto-start on boot configuration (macOS launchd / Linux systemd)
+6. **`packages/cli/src/hooks/ClaudeCodeHooks.ts`**
+   - Claude Code event hooks for monitoring execution
+   - Integration with Feishu notification system
+
+7. **`packages/cli/src/utils/FeishuMessageFormatter.ts`**
+   - Format Claude output for Feishu rich text messages
+   - Handle code blocks, markdown, and long message splitting
 
 ### Router Server Core Files
 
-6. **`packages/router/src/webhook/FeishuHandler.ts`**
+8. **`packages/router/src/webhook/FeishuHandler.ts`**
    - Receive Feishu webhook callbacks
    - Signature verification
    - Message parsing and routing
 
-7. **`packages/router/src/websocket/ConnectionHub.ts`**
+9. **`packages/router/src/websocket/ConnectionHub.ts`**
    - Manage all local client WebSocket connections
    - Message forwarding (open_id → device_id → WebSocket)
    - Connection health checking
 
-8. **`packages/router/src/binding/BindingManager.ts`**
-   - Binding code generation and verification
-   - User binding relationship storage (Redis)
-   - Bind/unbind operations
+10. **`packages/router/src/binding/BindingManager.ts`**
+    - Binding code generation and verification
+    - User binding relationship storage (JSON file)
+    - Bind/unbind operations
 
-9. **`packages/router/src/feishu/FeishuClient.ts`**
-   - Feishu API wrapper (send messages, token management)
-   - Message formatting (text, rich text cards)
-   - Error retry
+11. **`packages/router/src/feishu/FeishuClient.ts`**
+    - Feishu API wrapper (send messages, token management)
+    - Message formatting (text, rich text cards)
+    - Error retry
+
+12. **`packages/router/src/storage/JsonStore.ts`**
+    - Persistent JSON file storage for bindings
+    - Debounced writes to minimize disk I/O
+    - Auto-cleanup of expired data on startup
 
 ---
 
@@ -413,9 +450,9 @@ remote-cli/
     "commander": "^12.0.0",
     "conf": "^12.0.0",
     "chalk": "^5.3.0",
-    "ora": "^8.0.0",
+    "ora": "^8.0.1",
     "node-machine-id": "^1.1.12",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.1"
   }
 }
 ```
@@ -428,12 +465,13 @@ remote-cli/
   "version": "1.0.0",
   "dependencies": {
     "koa": "^2.15.0",
-    "@koa/router": "^12.0.0",
-    "koa-bodyparser": "^4.4.0",
+    "@koa/router": "^12.0.1",
+    "koa-bodyparser": "^4.4.1",
     "ws": "^8.18.0",
-    "ioredis": "^5.3.0",
-    "axios": "^1.6.0",
-    "dotenv": "^16.4.0"
+    "axios": "^1.6.7",
+    "commander": "^12.0.0",
+    "uuid": "^13.0.0",
+    "dotenv": "^16.4.1"
   }
 }
 ```
@@ -442,85 +480,89 @@ remote-cli/
 
 ## Implementation Steps
 
-### Phase 1: Router Server Foundation
+### Phase 1: Router Server Foundation ✅
 
-1. **Create Monorepo Structure**
+1. **Create Monorepo Structure** ✅
    - Initialize `packages/router` and `packages/cli`
    - Configure TypeScript and build tools
 
-2. **Implement Feishu Webhook Reception**
+2. **Implement Feishu Webhook Reception** ✅
    - `packages/router/src/webhook/FeishuHandler.ts`
    - Signature verification, event parsing
 
-3. **Implement WebSocket Hub**
+3. **Implement WebSocket Hub** ✅
    - `packages/router/src/websocket/ConnectionHub.ts`
    - Connection management, heartbeat detection
 
-4. **Implement Binding Management**
+4. **Implement Binding Management** ✅
    - `packages/router/src/binding/BindingManager.ts`
-   - Redis storage, binding code generation
+   - JSON file storage, binding code generation
 
-5. **Implement Feishu API Client**
+5. **Implement Feishu API Client** ✅
    - `packages/router/src/feishu/FeishuClient.ts`
    - Token management, message sending
 
-### Phase 2: Local Client Core
+### Phase 2: Local Client Core ✅
 
-6. **Implement WebSocket Client**
+6. **Implement WebSocket Client** ✅
    - `packages/cli/src/client/WebSocketClient.ts`
    - Connection, reconnection, heartbeat
 
-7. **Implement Configuration Management**
+7. **Implement Configuration Management** ✅
    - `packages/cli/src/config/ConfigManager.ts`
    - Read/write `~/.remote-cli/config.json`
 
-8. **Implement Directory Security Guard**
+8. **Implement Directory Security Guard** ✅
    - `packages/cli/src/security/DirectoryGuard.ts`
    - Path validation, whitelist checking
 
-9. **Implement Claude Executor**
-   - `packages/cli/src/executor/ClaudeExecutor.ts`
+9. **Implement Claude Executor** ✅
+   - `packages/cli/src/executor/ClaudeExecutor.ts` (spawn mode)
+   - `packages/cli/src/executor/ClaudePersistentExecutor.ts` (persistent mode)
    - Integrate Agent SDK, stream output
 
-10. **Implement Message Handler**
+10. **Implement Message Handler** ✅
     - `packages/cli/src/client/MessageHandler.ts`
     - Command parsing, result return
 
-### Phase 3: CLI Commands and Background Service
+### Phase 3: CLI Commands and Background Service (Partial)
 
-11. **Implement CLI Commands**
+11. **Implement CLI Commands** ✅
     - `init`, `start`, `stop`, `status`, `config`
 
-12. **Implement Background Service Management**
+12. **Implement Background Service Management** (not yet implemented)
     - `packages/cli/src/daemon/DaemonManager.ts`
     - PM2 integration, auto-start on boot
 
-13. **Implement Binding Process**
+13. **Implement Binding Process** ✅
     - `packages/cli/src/commands/init.ts`
     - Interactive guidance
 
-### Phase 4: Mobile Interaction Optimization
+### Phase 4: Mobile Interaction Optimization (Partial)
 
-14. **Implement Simplified Command Mapping**
-    - `/r` → `--resume`, `/c` → `--continue`
+14. **Implement Simplified Command Mapping** ✅
+    - Slash commands handled via MessageHandler
 
-15. **Implement Rich Text Formatting**
-    - Markdown rendering, code highlighting
+15. **Implement Rich Text Formatting** ✅
+    - `packages/cli/src/utils/FeishuMessageFormatter.ts`
+    - Markdown rendering, code highlighting, long message splitting
 
-16. **Implement Progress Indicators**
+16. **Implement Progress Indicators** ✅
+    - `packages/cli/src/hooks/FeishuNotificationAdapter.ts`
     - Processing, completion, error messages
 
-### Phase 5: Testing and Documentation
+### Phase 5: Testing and Documentation (Partial)
 
-17. **Integration Testing**
-    - End-to-end flow testing
-    - Multi-device concurrent testing
+17. **Integration Testing** ✅
+    - Unit tests and integration tests for both packages
 
-18. **Write Documentation**
-    - Installation guide, configuration guide, troubleshooting
+18. **Write Documentation** (partial)
+    - CLAUDE.md, PLAN.md, README.md completed
+    - ROUTER_CONFIG.md, QUICKSTART.md completed
+    - Detailed docs/ directory not yet created
 
-19. **Deploy Router Server**
-    - Docker packaging, cloud server deployment
+19. **Deploy Router Server** (not yet completed)
+    - Docker packaging not yet created
 
 ---
 
@@ -587,9 +629,9 @@ remote-cli logs --follow
 - Cloud Server: 2 cores 4GB (Lowest tier on Alibaba Cloud/Tencent Cloud is sufficient)
 - Operating System: Ubuntu 22.04 LTS
 - Domain: `router.company.com` (HTTPS required)
-- Redis: Local installation or cloud Redis
+- Storage: Built-in JSON file storage (no external database required)
 
-**Docker Compose Quick Deployment**:
+**Docker Compose Quick Deployment** (to be created):
 
 ```yaml
 version: '3.8'
@@ -597,24 +639,17 @@ services:
   router:
     build: ./packages/router
     ports:
-      - "443:443"
+      - "3000:3000"
     environment:
-      - REDIS_URL=redis://redis:6379
       - FEISHU_APP_ID=${FEISHU_APP_ID}
       - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
       - FEISHU_ENCRYPT_KEY=${FEISHU_ENCRYPT_KEY}
-    depends_on:
-      - redis
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
     volumes:
-      - redis_data:/data
+      - router_data:/root/.remote-cli-router
     restart: unless-stopped
 
 volumes:
-  redis_data:
+  router_data:
 ```
 
 ### Feishu Bot Configuration
@@ -643,7 +678,7 @@ volumes:
 
 ### Performance Optimization
 - [ ] Message queue (use Bull/BullMQ for high concurrency)
-- [ ] Stream output (real-time push of Claude's output instead of waiting for completion)
+- [x] Stream output (real-time push of Claude's output via persistent executor)
 - [ ] Result caching (don't re-execute same questions)
 
 ### Security Hardening

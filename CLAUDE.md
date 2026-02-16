@@ -45,7 +45,7 @@ This is a remote CLI tool that allows developers to control Claude Code CLI from
 **Core Architecture:**
 - **Monorepo structure** with two main packages:
   - `packages/cli`: Local client that runs on the developer's machine
-  - `packages/router`: Routing server that manages user binding and message forwarding (planned, not yet implemented)
+  - `packages/router`: Routing server that manages user binding and message forwarding via Feishu
 - **Local client** connects to a router server via WebSocket and executes Claude Code commands
 - **Security model**: Directory whitelisting + command filtering + device authentication
 
@@ -58,7 +58,7 @@ npm run build
 
 # Build specific workspace
 npm run build -w @xiaoyu/remote-cli        # CLI package
-npm run build -w @xiaoyu/remote-cli-router # Router package (when implemented)
+npm run build -w @xiaoyu/remote-cli-router # Router package
 ```
 
 ### Testing
@@ -87,7 +87,7 @@ npm test -- integration/full-workflow.test.ts
 # Run CLI in dev mode (with file watching)
 npm run cli:dev
 
-# Run router in dev mode (when implemented)
+# Run router in dev mode
 npm run router:dev
 ```
 
@@ -145,11 +145,11 @@ Without this mock, tests will write to the real home directory and contaminate e
 The security model has **three layers**:
 1. **Directory whitelist**: `DirectoryGuard.isAllowed()` checks working directories
 2. **Command filtering**: `CommandFilter` blocks dangerous bash commands (planned, not yet implemented)
-3. **Device authentication**: Router server binds devices to specific users (planned, not yet implemented)
+3. **Device authentication**: Router server binds devices to specific users via Feishu binding flow
 
 ## Key Implementation Patterns
 
-### Message Flow (Planned Architecture)
+### Message Flow
 ```
 User's Phone → Feishu → Router Server → WebSocket → Local CLI → Claude Code
                                                                       ↓
@@ -179,12 +179,25 @@ Integration tests validate:
 ### Source Code Organization
 ```
 packages/cli/src/
-  commands/      # CLI command implementations (init, start, stop, etc.)
+  commands/      # CLI command implementations (init, start, stop, status, config)
   client/        # WebSocket client and message handling
   config/        # Configuration management
-  executor/      # Claude Code integration (planned)
-  security/      # Directory guard and command filtering
+  executor/      # Claude Code integration (ClaudeExecutor + ClaudePersistentExecutor)
+  hooks/         # Claude Code hooks and Feishu notification adapter
+  security/      # Directory guard (CommandFilter planned, not yet implemented)
   types/         # TypeScript type definitions
+  utils/         # Utility functions (FeishuMessageFormatter, stripAnsi)
+
+packages/router/src/
+  binding/       # User-device binding management (BindingManager)
+  commands/      # Router CLI commands (config, start, stop, status)
+  config/        # Router configuration management
+  feishu/        # Feishu API client and long connection handler
+  storage/       # Data persistence (JsonStore, MemoryStore)
+  types/         # TypeScript type definitions
+  utils/         # Utility functions (PidManager)
+  webhook/       # Feishu webhook handler
+  websocket/     # WebSocket connection hub
 ```
 
 ### Test Organization
@@ -193,25 +206,69 @@ packages/cli/tests/
   *.test.ts              # Unit tests (named after source file)
   commands/              # Command-specific tests
   integration/           # Full workflow integration tests
+
+packages/router/tests/
+  *.test.ts              # Unit tests for router components
 ```
 
 ## Implementation Notes
 
-### Router Server (Planned)
-The router server package structure is defined but not yet implemented. It will include:
+### Router Server
+The router server is fully implemented with:
 - `webhook/FeishuHandler.ts`: Handle Feishu webhook callbacks
 - `websocket/ConnectionHub.ts`: Manage WebSocket connections from local clients
-- `binding/BindingManager.ts`: Manage user-device bindings with Redis
+- `binding/BindingManager.ts`: Manage user-device bindings with JSON file storage
 - `feishu/FeishuClient.ts`: Feishu API wrapper for sending messages
+- `feishu/FeishuLongConnHandler.ts`: Feishu long connection handler
+- `storage/JsonStore.ts`: Persistent JSON file storage (replaces Redis)
+- `storage/MemoryStore.ts`: In-memory storage with TTL support
+- `utils/PidManager.ts`: Server process management
 
-### WebSocket Protocol (Planned)
-Messages between router and CLI will use this format:
+### WebSocket Protocol
+The CLI and router use different message type systems:
+
+**CLI side** (`packages/cli/src/types/index.ts`):
 ```typescript
-{
-  type: "command" | "response" | "error" | "binding",
-  messageId: string,
-  content: string,
-  timestamp: number
+// Incoming from router
+interface IncomingMessage {
+  type: 'command' | 'status' | 'ping';
+  messageId: string;
+  content?: string;
+  workingDirectory?: string;
+  openId?: string;
+  timestamp: number;
+  isSlashCommand?: boolean;
+}
+
+// Outgoing to router
+interface OutgoingMessage {
+  type: 'result' | 'progress' | 'status' | 'pong';
+  messageId: string;
+  success?: boolean;
+  output?: string;
+  error?: string;
+  timestamp: number;
+  openId?: string;
+}
+```
+
+**Router side** (`packages/router/src/types/index.ts`):
+```typescript
+enum MessageType {
+  COMMAND = 'command',
+  RESPONSE = 'response',
+  BINDING_REQUEST = 'binding_request',
+  BINDING_CONFIRM = 'binding_confirm',
+  HEARTBEAT = 'heartbeat',
+  ERROR = 'error',
+  NOTIFICATION = 'notification'
+}
+
+interface WSMessage {
+  type: MessageType;
+  messageId: string;
+  timestamp: number;
+  data: any;
 }
 ```
 

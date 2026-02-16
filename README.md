@@ -306,10 +306,11 @@ The router server manages message forwarding between Feishu and local clients. I
 
 ### Prerequisites
 
-- A cloud server with at least **2 CPU cores** and **4GB RAM**
+- A cloud server with at least **1 CPU core** and **1GB RAM**
 - **Node.js** >= 18.0.0
 - **A domain name** with SSL certificate (HTTPS required for Feishu webhooks)
 - **Feishu bot** created and configured
+- No external database required (uses built-in JSON file storage)
 
 ### 1. Clone Repository
 
@@ -414,26 +415,15 @@ pm2 start remote-cli-router --name router -- start
 pm2 logs router
 ```
 
-#### Docker Deployment (Recommended)
+#### Docker Deployment
 
-Use the provided `docker-compose.yml`:
+You can containerize the router server with Docker:
 
 ```bash
-# Build and start services
 docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
 ```
 
-The `docker-compose.yml` includes:
-- Router server
-- Redis
-- Automatic restart on failure
-- Volume persistence for Redis data
+The router uses JSON file storage (no external database needed), so make sure to mount a persistent volume for `~/.remote-cli-router/`.
 
 ### 8. Configure Reverse Proxy (Nginx)
 
@@ -618,14 +608,6 @@ remote-cli init --force
 3. Verify Nginx is routing correctly
 4. Check server logs: `pm2 logs remote-cli-router`
 
-**Redis connection failed:**
-```bash
-# Check Redis is running
-redis-cli ping
-
-# Should respond with "PONG"
-```
-
 **WebSocket connection drops:**
 1. Check firewall settings
 2. Verify WebSocket timeout configuration
@@ -662,22 +644,19 @@ redis-cli ping
 }
 ```
 
-### Router Server Environment Variables
+### Router Server Configuration
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server port | `3000` |
-| `NODE_ENV` | Environment | `development` |
-| `REDIS_HOST` | Redis hostname | `localhost` |
-| `REDIS_PORT` | Redis port | `6379` |
-| `REDIS_PASSWORD` | Redis password | - |
-| `FEISHU_APP_ID` | Feishu app ID | Required |
-| `FEISHU_APP_SECRET` | Feishu app secret | Required |
-| `FEISHU_ENCRYPT_KEY` | Feishu encrypt key | Required |
-| `FEISHU_VERIFICATION_TOKEN` | Feishu verification token | Required |
-| `WS_HEARTBEAT_INTERVAL` | WebSocket heartbeat (ms) | `30000` |
-| `WS_RECONNECT_DELAY` | Reconnect delay (ms) | `5000` |
-| `BINDING_CODE_EXPIRY` | Binding code expiry (ms) | `300000` |
+The router server uses interactive configuration stored at `~/.remote-cli-router/config.json`. Run `remote-cli-router config` to set up.
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `port` | Server port | `3000` |
+| `host` | Server host | `0.0.0.0` |
+| `feishuAppId` | Feishu app ID | Required |
+| `feishuAppSecret` | Feishu app secret | Required |
+| `feishuEncryptKey` | Feishu encrypt key | Optional |
+| `feishuVerificationToken` | Feishu verification token | Optional |
+| `wsHeartbeatInterval` | WebSocket heartbeat (ms) | `30000` |
 
 ## Development
 
@@ -709,7 +688,7 @@ MIT
 
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please open an issue or submit a pull request on GitHub.
 
 ## Support
 
