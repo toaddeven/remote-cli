@@ -29,6 +29,9 @@ export class FeishuLongConnHandler {
   private readonly FEISHU_MESSAGE_LIMIT = 4000;
   // Track message chains: messageId -> [messageId1, messageId2, ...]
   private messageChains: Map<string, string[]> = new Map();
+  // Track the last processed text length for each message chain
+  // This helps us only send NEW content to existing messages, preventing duplication
+  private lastProcessedLengths: Map<string, number> = new Map();
 
   constructor(config: FeishuLongConnHandlerConfig) {
     this.appId = config.appId;
@@ -489,6 +492,11 @@ Examples:
   /**
    * Update streaming message content
    * Automatically creates new messages if content exceeds Feishu's size limit
+   *
+   * This method uses an incremental approach to prevent content duplication:
+   * - Once a message (except the last one) is created, its content is frozen
+   * - Only the last message in the chain gets updated with new content
+   * - New messages are only created when the last message exceeds the limit
    */
   async updateStreamingMessage(messageId: string, text: string, openId?: string): Promise<boolean> {
     try {
@@ -499,8 +507,29 @@ Examples:
         this.messageChains.set(messageId, chain);
       }
 
+      // Get the last processed length for this chain
+      const lastProcessedLength = this.lastProcessedLengths.get(messageId) || 0;
+
       // Split text into chunks
       const chunks = this.splitTextIntoChunks(text);
+
+      // Calculate cumulative lengths to determine which chunk each character belongs to
+      const cumulativeLengths: number[] = [];
+      let cumulative = 0;
+      for (const chunk of chunks) {
+        cumulative += chunk.length;
+        cumulativeLengths.push(cumulative);
+      }
+
+      // Determine which chunk contains the last processed character
+      // This tells us which messages are "complete" (frozen) vs which is still growing
+      let lastProcessedChunkIndex = 0;
+      for (let i = 0; i < cumulativeLengths.length; i++) {
+        if (lastProcessedLength <= cumulativeLengths[i]) {
+          lastProcessedChunkIndex = i;
+          break;
+        }
+      }
 
       // Update existing messages and create new ones as needed
       for (let i = 0; i < chunks.length; i++) {
@@ -511,24 +540,32 @@ Examples:
         const content = isLastChunk ? chunk : `${chunk}\n\n_➡️ Continued in next message..._`;
 
         if (i < chain.length) {
-          // Update existing message in chain
-          await this.client.im.message.patch({
-            path: { message_id: chain[i] },
-            data: {
-              content: JSON.stringify({
-                config: { wide_screen_mode: true },
-                elements: [
-                  {
-                    tag: 'div',
-                    text: {
-                      tag: 'lark_md',
-                      content,
+          // This is an existing message
+          // Only update if:
+          // 1. It's the last chunk (still receiving new content)
+          // 2. OR it's the chunk containing the last processed position (transitioning from growing to frozen)
+          const shouldUpdate = isLastChunk || i >= lastProcessedChunkIndex;
+
+          if (shouldUpdate) {
+            await this.client.im.message.patch({
+              path: { message_id: chain[i] },
+              data: {
+                content: JSON.stringify({
+                  config: { wide_screen_mode: true },
+                  elements: [
+                    {
+                      tag: 'div',
+                      text: {
+                        tag: 'lark_md',
+                        content,
+                      },
                     },
-                  },
-                ],
-              }),
-            },
-          });
+                  ],
+                }),
+              },
+            });
+          }
+          // If not updating, the message keeps its previous content (frozen)
         } else if (openId) {
           // Create new message for additional chunks
           const prefix = `_⬅️ Continued from previous message..._\n\n`;
@@ -564,6 +601,9 @@ Examples:
           break;
         }
       }
+
+      // Update the last processed length
+      this.lastProcessedLengths.set(messageId, text.length);
 
       return true;
     } catch (error: any) {
@@ -688,6 +728,7 @@ Examples:
 
       // Clean up message chain tracking
       this.messageChains.delete(messageId);
+      this.lastProcessedLengths.delete(messageId);
 
       return true;
     } catch (error: any) {
