@@ -31,7 +31,7 @@ describe('status command', () => {
         },
       })),
     };
-    (ConfigManager as any).mockImplementation(() => mockConfig);
+    vi.spyOn(ConfigManager, 'initialize').mockResolvedValue(mockConfig);
 
     mockWsClient = {
       isConnected: vi.fn(() => true),

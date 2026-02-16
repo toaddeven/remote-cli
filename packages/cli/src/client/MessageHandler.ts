@@ -438,6 +438,7 @@ You can also use natural language commands to control Claude Code CLI.`,
       // Output has already been streamed via onStream callback
       this.sendResponse(messageId, {
         success: result.success,
+        error: result.error,
       });
     } catch (error) {
       this.sendResponse(messageId, {
@@ -482,6 +483,7 @@ You can also use natural language commands to control Claude Code CLI.`,
         sessionAbbr: result.sessionAbbr,
         openId: this.currentOpenId,
         timestamp: Date.now(),
+        cwd: this.executor.getCurrentWorkingDirectory(),
       });
     } catch (error) {
       console.error('Failed to send response:', error);

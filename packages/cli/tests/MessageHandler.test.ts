@@ -71,7 +71,7 @@ describe('MessageHandler', () => {
       );
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-123',
           success: true,
         })
@@ -95,7 +95,7 @@ describe('MessageHandler', () => {
 
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-456',
           success: false,
           error: 'Execution failed',
@@ -229,7 +229,7 @@ describe('MessageHandler', () => {
 
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-123',
           success: true,
           output: expect.stringContaining('test-project'),
@@ -252,7 +252,7 @@ describe('MessageHandler', () => {
 
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-123',
           success: true,
           output: expect.stringContaining('Available commands'),
@@ -276,7 +276,7 @@ describe('MessageHandler', () => {
       expect(mockExecutor.resetContext).toHaveBeenCalled();
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-123',
           success: true,
         })
@@ -298,7 +298,7 @@ describe('MessageHandler', () => {
       expect(mockExecutor.setWorkingDirectory).toHaveBeenCalledWith('~/test-project');
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-123',
           success: true,
         })
@@ -321,7 +321,7 @@ describe('MessageHandler', () => {
 
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-123',
           success: false,
           error: expect.stringContaining('not allowed'),
@@ -341,7 +341,7 @@ describe('MessageHandler', () => {
 
       expect(mockWsClient.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'result',
+          type: 'response',
           messageId: 'msg-123',
           success: false,
         })

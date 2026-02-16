@@ -66,9 +66,8 @@ describe('start command', () => {
       });
 
       expect(WebSocketClient).toHaveBeenCalledWith(
-        'https://test-server.com',
-        'dev_test_12345',
-        expect.any(Object)
+        'wss://test-server.com/ws',
+        'dev_test_12345'
       );
       expect(mockWsClient.connect).toHaveBeenCalled();
     });

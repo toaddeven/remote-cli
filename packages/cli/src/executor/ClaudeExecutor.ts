@@ -277,7 +277,11 @@ export class ClaudeExecutor {
         console.log('[Claude stdout]', chunk);
         outputChunks.push(chunk);
         if (options.onStream) {
-          options.onStream(chunk);
+          try {
+            options.onStream(chunk);
+          } catch (error) {
+            console.error('[Claude] onStream callback error:', error);
+          }
         }
       });
 
@@ -287,7 +291,11 @@ export class ClaudeExecutor {
         console.error('[Claude stderr]', chunk);
         outputChunks.push(chunk);
         if (options.onStream) {
-          options.onStream(chunk);
+          try {
+            options.onStream(chunk);
+          } catch (error) {
+            console.error('[Claude] onStream callback error:', error);
+          }
         }
       });
 

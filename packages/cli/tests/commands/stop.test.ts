@@ -33,7 +33,7 @@ describe('stop command', () => {
       })),
       set: vi.fn(),
     };
-    (ConfigManager as any).mockImplementation(() => mockConfig);
+    vi.spyOn(ConfigManager, 'initialize').mockResolvedValue(mockConfig);
   });
 
   afterEach(() => {

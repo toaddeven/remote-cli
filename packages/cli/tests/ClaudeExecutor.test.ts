@@ -25,13 +25,14 @@ describe('ClaudeExecutor', () => {
   let directoryGuard: DirectoryGuard;
   const mockSpawn = spawn as any;
   const mockFs = fs as any;
+  let mockChildProcess: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
     directoryGuard = new DirectoryGuard(['~/test-project', './work']);
 
     // Mock spawn to return a mock child process
-    const mockChildProcess = new EventEmitter() as any;
+    mockChildProcess = new EventEmitter() as any;
     mockChildProcess.stdout = new EventEmitter();
     mockChildProcess.stderr = new EventEmitter();
     mockChildProcess.stdin = {
@@ -93,20 +94,17 @@ describe('ClaudeExecutor', () => {
     it('should execute command with Claude CLI', async () => {
       const executePromise = executor.execute('list files');
 
-      // Simulate successful execution
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
-
       // Emit output
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'Test output');
-        mockProcess.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'Test output');
+        mockChildProcess.emit('close', 0);
       });
 
       const result = await executePromise;
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'claude',
-        expect.arrayContaining(['-d']),
+        expect.arrayContaining(['--print']),
         expect.objectContaining({
           cwd: expect.any(String),
         })
@@ -119,11 +117,9 @@ describe('ClaudeExecutor', () => {
       executor.setWorkingDirectory('~/test-project');
       const executePromise = executor.execute('test command');
 
-      // Simulate successful execution
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'ok');
-        mockProcess.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'ok');
+        mockChildProcess.emit('close', 0);
       });
 
       await executePromise;
@@ -141,10 +137,9 @@ describe('ClaudeExecutor', () => {
       const executePromise = executor.execute('test command');
 
       // Simulate error
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stderr.emit('data', 'Claude CLI error');
-        mockProcess.emit('close', 1);
+        mockChildProcess.stderr.emit('data', 'Claude CLI error');
+        mockChildProcess.emit('close', 1);
       });
 
       const result = await executePromise;
@@ -177,12 +172,11 @@ describe('ClaudeExecutor', () => {
       const executePromise = executor.execute('test command', { onStream });
 
       // Simulate streaming output
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'chunk 1');
-        mockProcess.stdout.emit('data', 'chunk 2');
-        mockProcess.stdout.emit('data', 'chunk 3');
-        mockProcess.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'chunk 1');
+        mockChildProcess.stdout.emit('data', 'chunk 2');
+        mockChildProcess.stdout.emit('data', 'chunk 3');
+        mockChildProcess.emit('close', 0);
       });
 
       await executePromise;
@@ -199,10 +193,9 @@ describe('ClaudeExecutor', () => {
       const executePromise = executor.execute('test', { onStream });
 
       // Simulate output
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'test chunk');
-        mockProcess.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'test chunk');
+        mockChildProcess.emit('close', 0);
       });
 
       // Should not throw, should continue execution
@@ -216,17 +209,16 @@ describe('ClaudeExecutor', () => {
       const executePromise = executor.execute('test command');
 
       // Simulate successful execution
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'ok');
-        mockProcess.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'ok');
+        mockChildProcess.emit('close', 0);
       });
 
       await executePromise;
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'claude',
-        expect.arrayContaining(['-d']),
+        expect.arrayContaining(['--print']),
         expect.any(Object)
       );
     });
@@ -235,34 +227,39 @@ describe('ClaudeExecutor', () => {
       const executePromise = executor.execute('test command');
 
       // Simulate successful execution
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'ok');
-        mockProcess.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'ok');
+        mockChildProcess.emit('close', 0);
       });
 
       await executePromise;
 
       const call = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
-      expect(call[1]).toContain('-d'); // Direct mode flag
+      expect(call[1]).toContain('--print'); // Print mode flag
     });
   });
 
   describe('context management', () => {
     it('should maintain execution context with session', async () => {
       const executePromise1 = executor.execute('command 1');
-      const mockProcess1 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess1.stdout.emit('data', 'ok');
-        mockProcess1.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'ok');
+        mockChildProcess.emit('close', 0);
       });
       await executePromise1;
 
+      // Create a new mock process for second execution
+      const mockChildProcess2 = new EventEmitter() as any;
+      mockChildProcess2.stdout = new EventEmitter();
+      mockChildProcess2.stderr = new EventEmitter();
+      mockChildProcess2.stdin = { write: vi.fn(), end: vi.fn() };
+      mockChildProcess2.kill = vi.fn();
+      mockSpawn.mockReturnValue(mockChildProcess2);
+
       const executePromise2 = executor.execute('command 2');
-      const mockProcess2 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess2.stdout.emit('data', 'ok');
-        mockProcess2.emit('close', 0);
+        mockChildProcess2.stdout.emit('data', 'ok');
+        mockChildProcess2.emit('close', 0);
       });
       await executePromise2;
 
@@ -271,20 +268,26 @@ describe('ClaudeExecutor', () => {
 
     it('should reset context when requested', async () => {
       const executePromise1 = executor.execute('command 1');
-      const mockProcess1 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess1.stdout.emit('data', 'ok');
-        mockProcess1.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'ok');
+        mockChildProcess.emit('close', 0);
       });
       await executePromise1;
 
       executor.resetContext();
 
+      // Create a new mock process for second execution
+      const mockChildProcess2 = new EventEmitter() as any;
+      mockChildProcess2.stdout = new EventEmitter();
+      mockChildProcess2.stderr = new EventEmitter();
+      mockChildProcess2.stdin = { write: vi.fn(), end: vi.fn() };
+      mockChildProcess2.kill = vi.fn();
+      mockSpawn.mockReturnValue(mockChildProcess2);
+
       const executePromise2 = executor.execute('command 2');
-      const mockProcess2 = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess2.stdout.emit('data', 'ok');
-        mockProcess2.emit('close', 0);
+        mockChildProcess2.stdout.emit('data', 'ok');
+        mockChildProcess2.emit('close', 0);
       });
       await executePromise2;
 
@@ -299,10 +302,9 @@ describe('ClaudeExecutor', () => {
       const promise2 = executor.execute('command 2');
 
       // Simulate first execution
-      const mockProcess1 = mockSpawn.mock.results[0].value;
       setImmediate(() => {
-        mockProcess1.stdout.emit('data', 'ok');
-        mockProcess1.emit('close', 0);
+        mockChildProcess.stdout.emit('data', 'ok');
+        mockChildProcess.emit('close', 0);
       });
 
       const result1 = await promise1;
@@ -380,10 +382,9 @@ describe('ClaudeExecutor', () => {
       const executePromise = executor.execute('test command');
 
       // Simulate error
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stderr.emit('data', 'ENOENT: no such file');
-        mockProcess.emit('close', 1);
+        mockChildProcess.stderr.emit('data', 'ENOENT: no such file');
+        mockChildProcess.emit('close', 1);
       });
 
       const result = await executePromise;
@@ -398,10 +399,9 @@ describe('ClaudeExecutor', () => {
       const executePromise = executor.execute('test command');
 
       // Simulate error
-      const mockProcess = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value;
       setImmediate(() => {
-        mockProcess.stderr.emit('data', 'Permission denied');
-        mockProcess.emit('close', 1);
+        mockChildProcess.stderr.emit('data', 'Permission denied');
+        mockChildProcess.emit('close', 1);
       });
 
       const result = await executePromise;

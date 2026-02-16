@@ -31,7 +31,7 @@ describe('init command', () => {
       has: vi.fn(() => false),
       getAll: vi.fn(() => ({})),
     };
-    (ConfigManager as any).mockImplementation(() => mockConfig);
+    (ConfigManager.initialize as any).mockResolvedValue(mockConfig);
 
     mockMachineId.mockResolvedValue('test-machine-id-12345');
   });
