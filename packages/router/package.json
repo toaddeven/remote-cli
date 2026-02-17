@@ -1,18 +1,50 @@
 {
   "name": "@xiaoyu/remote-cli-router",
   "version": "1.0.0",
-  "description": "Router server for remote CLI",
+  "description": "Router server for remote CLI - message forwarding between Feishu and local clients",
   "main": "dist/cli.js",
   "types": "dist/cli.d.ts",
   "bin": {
     "remote-cli-router": "./bin/remote-cli-router.js"
   },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/cli.ts -- start",
     "start": "node dist/cli.js start",
     "test": "vitest",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xiaoyu/remote-cli.git",
+    "directory": "packages/router"
+  },
+  "homepage": "https://github.com/xiaoyu/remote-cli#readme",
+  "bugs": {
+    "url": "https://github.com/xiaoyu/remote-cli/issues"
+  },
+  "keywords": [
+    "claude",
+    "cli",
+    "remote",
+    "feishu",
+    "router",
+    "websocket"
+  ],
+  "author": "xiaoyu",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@koa/router": "^12.0.1",

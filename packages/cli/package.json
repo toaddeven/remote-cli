@@ -7,11 +7,43 @@
   "bin": {
     "remote-cli": "./bin/remote-cli.js"
   },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "test": "vitest",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xiaoyu/remote-cli.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/xiaoyu/remote-cli#readme",
+  "bugs": {
+    "url": "https://github.com/xiaoyu/remote-cli/issues"
+  },
+  "keywords": [
+    "claude",
+    "cli",
+    "remote",
+    "feishu",
+    "mobile",
+    "claude-code"
+  ],
+  "author": "xiaoyu",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.0",
