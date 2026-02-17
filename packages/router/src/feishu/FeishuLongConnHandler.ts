@@ -146,6 +146,10 @@ export class FeishuLongConnHandler {
         await this.handleUnbindCommand(openId, messageId);
         break;
 
+      case '/device':
+        await this.handleDeviceCommand(openId, messageId, parts.slice(1));
+        break;
+
       case '/help':
         await this.handleHelpCommand(openId, messageId);
         break;
@@ -178,6 +182,16 @@ export class FeishuLongConnHandler {
         return;
       }
 
+      // Get active device
+      const activeDevice = await this.bindingManager.getActiveDevice(openId);
+      if (!activeDevice) {
+        await this.replyToMessage(
+          messageId,
+          '❌ No active device found. Please use /device list to view your devices'
+        );
+        return;
+      }
+
       // Check if ConnectionHub is available
       if (!this.connectionHub) {
         await this.replyToMessage(messageId, '❌ Server error: ConnectionHub not initialized');
@@ -185,10 +199,10 @@ export class FeishuLongConnHandler {
       }
 
       // Check if device is online
-      if (!this.connectionHub.isDeviceOnline(binding.deviceId)) {
+      if (!this.connectionHub.isDeviceOnline(activeDevice.deviceId)) {
         await this.replyToMessage(
           messageId,
-          `❌ Device ${binding.deviceName} is currently offline, please ensure the device is started and connected to the server`
+          `❌ Device ${activeDevice.deviceName} is currently offline, please ensure the device is started and connected to the server`
         );
         return;
       }
@@ -202,11 +216,11 @@ export class FeishuLongConnHandler {
       const feishuMessageId = await this.sendStreamingStart(openId, `🤔 Executing ${command}...`);
       console.log(`[FeishuHandler] Created card ${feishuMessageId} for slash command ${commandMessageId}`);
       if (this.onStartStreaming) {
-        this.onStartStreaming(commandMessageId, openId, feishuMessageId, binding.deviceId);
+        this.onStartStreaming(commandMessageId, openId, feishuMessageId, activeDevice.deviceId);
       }
 
       // Send slash command to device - the client will execute it locally
-      const success = await this.connectionHub.sendToDevice(binding.deviceId, {
+      const success = await this.connectionHub.sendToDevice(activeDevice.deviceId, {
         type: MessageType.COMMAND,
         messageId: commandMessageId,
         timestamp: Date.now(),
@@ -236,13 +250,27 @@ export class FeishuLongConnHandler {
         return;
       }
 
+      // Check if device is already bound
+      const existingDevices = await this.bindingManager.getUserDevices(openId);
+      const alreadyBound = existingDevices.some(d => d.deviceId === bindingCode.deviceId);
+
+      if (alreadyBound) {
+        await this.replyToMessage(messageId, '❌ This device is already bound to your account');
+        return;
+      }
+
       // Bind user
       const deviceName = 'Device'; // Will be updated by client later
       await this.bindingManager.bindUser(openId, bindingCode.deviceId, deviceName);
 
+      const isFirstDevice = existingDevices.length === 0;
+      const statusNote = isFirstDevice
+        ? '\n\n📱 This is your first device and will be set as active.'
+        : '\n\n📱 Use /device switch to activate this device.';
+
       await this.replyToMessage(
         messageId,
-        `✅ Binding successful!\n\nDevice ID: ${bindingCode.deviceId}\n\nYou can now control your device through Feishu.`
+        `✅ Binding successful!\n\nDevice ID: ${bindingCode.deviceId}\n\nYou can now control your device through Feishu.${statusNote}\n\nUse /device list to view all your devices.`
       );
     } catch (error) {
       console.error('Error binding user:', error);
@@ -264,10 +292,28 @@ export class FeishuLongConnHandler {
         return;
       }
 
-      const isOnline = this.connectionHub?.isDeviceOnline(binding.deviceId) || false;
-      const status = isOnline ? '🟢 Online' : '🔴 Offline';
+      const devices = binding.devices;
+      if (devices.length === 0) {
+        await this.replyToMessage(messageId, '❌ No devices found');
+        return;
+      }
 
-      const message = `📊 Device Status\n\nDevice Name: ${binding.deviceName}\nDevice ID: ${binding.deviceId}\nStatus: ${status}\nBinding Time: ${new Date(binding.boundAt).toLocaleString('en-US')}`;
+      // Build status message
+      let message = `📊 Device Status\n\n`;
+
+      for (const device of devices) {
+        const isOnline = this.connectionHub?.isDeviceOnline(device.deviceId) || false;
+        const status = isOnline ? '🟢 Online' : '🔴 Offline';
+        const activeIndicator = device.isActive ? ' ⭐ ACTIVE' : '';
+
+        message += `\n**${device.deviceName}**${activeIndicator}\n`;
+        message += `Device ID: ${device.deviceId}\n`;
+        message += `Status: ${status}\n`;
+        message += `Bound: ${new Date(device.boundAt).toLocaleString('en-US')}\n`;
+        message += `Last Active: ${new Date(device.lastActiveAt).toLocaleString('en-US')}\n`;
+      }
+
+      message += `\n\nTotal Devices: ${devices.length}`;
 
       await this.replyToMessage(messageId, message);
     } catch (error) {
@@ -278,6 +324,8 @@ export class FeishuLongConnHandler {
 
   /**
    * Handle unbind command
+   * Usage: /unbind or /unbind all (unbind all devices)
+   * For unbinding specific device, use /device unbind <device-id>
    */
   private async handleUnbindCommand(openId: string, messageId: string): Promise<void> {
     try {
@@ -287,14 +335,167 @@ export class FeishuLongConnHandler {
         return;
       }
 
+      const deviceCount = binding.devices.length;
+
+      // Unbind all devices
       await this.bindingManager.unbindUser(openId);
       await this.replyToMessage(
         messageId,
-        `✅ Device ${binding.deviceName} has been unbound`
+        `✅ Successfully unbound ${deviceCount} device(s)`
       );
     } catch (error) {
       console.error('Error handling unbind command:', error);
       await this.replyToMessage(messageId, '❌ Unbinding failed, please try again later');
+    }
+  }
+
+  /**
+   * Handle device command
+   * Usage:
+   *   /device list - List all bound devices
+   *   /device switch <device-id> - Switch active device
+   *   /device unbind <device-id> - Unbind a specific device
+   */
+  private async handleDeviceCommand(openId: string, messageId: string, args: string[]): Promise<void> {
+    try {
+      const binding = await this.bindingManager.getUserBinding(openId);
+      if (!binding) {
+        await this.replyToMessage(
+          messageId,
+          '❌ You have not bound a device yet, please send /bind <binding-code> to bind first'
+        );
+        return;
+      }
+
+      const subcommand = args[0]?.toLowerCase();
+
+      switch (subcommand) {
+        case 'list':
+          await this.handleDeviceList(openId, messageId, binding);
+          break;
+
+        case 'switch':
+          if (args.length < 2) {
+            await this.replyToMessage(messageId, '❌ Please provide device ID, format: /device switch <device-id>');
+            return;
+          }
+          await this.handleDeviceSwitch(openId, messageId, args[1]);
+          break;
+
+        case 'unbind':
+          if (args.length < 2) {
+            await this.replyToMessage(messageId, '❌ Please provide device ID, format: /device unbind <device-id>');
+            return;
+          }
+          await this.handleDeviceUnbind(openId, messageId, args[1]);
+          break;
+
+        default:
+          await this.replyToMessage(
+            messageId,
+            '❌ Unknown subcommand. Available: /device list, /device switch <device-id>, /device unbind <device-id>'
+          );
+      }
+    } catch (error) {
+      console.error('Error handling device command:', error);
+      await this.replyToMessage(messageId, '❌ Error processing device command, please try again later');
+    }
+  }
+
+  /**
+   * Handle /device list
+   */
+  private async handleDeviceList(openId: string, messageId: string, binding: any): Promise<void> {
+    const devices = binding.devices;
+    if (devices.length === 0) {
+      await this.replyToMessage(messageId, '❌ No devices found');
+      return;
+    }
+
+    let message = `📱 Your Devices (${devices.length})\n\n`;
+
+    for (let i = 0; i < devices.length; i++) {
+      const device = devices[i];
+      const isOnline = this.connectionHub?.isDeviceOnline(device.deviceId) || false;
+      const status = isOnline ? '🟢 Online' : '🔴 Offline';
+      const activeIndicator = device.isActive ? ' ⭐ ACTIVE' : '';
+
+      message += `${i + 1}. **${device.deviceName}**${activeIndicator}\n`;
+      message += `   ID: ${device.deviceId}\n`;
+      message += `   Status: ${status}\n`;
+      message += `   Bound: ${new Date(device.boundAt).toLocaleString('en-US')}\n\n`;
+    }
+
+    message += `\nUse /device switch <device-id> to change active device`;
+
+    await this.replyToMessage(messageId, message);
+  }
+
+  /**
+   * Handle /device switch <device-id>
+   */
+  private async handleDeviceSwitch(openId: string, messageId: string, deviceId: string): Promise<void> {
+    try {
+      const result = await this.bindingManager.switchActiveDevice(openId, deviceId);
+
+      if (!result) {
+        await this.replyToMessage(messageId, '❌ Device not found or switch failed');
+        return;
+      }
+
+      const device = await this.bindingManager.getActiveDevice(openId);
+      if (!device) {
+        await this.replyToMessage(messageId, '❌ Failed to get active device after switch');
+        return;
+      }
+
+      await this.replyToMessage(
+        messageId,
+        `✅ Switched to device: ${device.deviceName}\n\nDevice ID: ${device.deviceId}`
+      );
+    } catch (error) {
+      console.error('Error switching device:', error);
+      await this.replyToMessage(messageId, '❌ Failed to switch device, please try again later');
+    }
+  }
+
+  /**
+   * Handle /device unbind <device-id>
+   */
+  private async handleDeviceUnbind(openId: string, messageId: string, deviceId: string): Promise<void> {
+    try {
+      const devices = await this.bindingManager.getUserDevices(openId);
+      const device = devices.find(d => d.deviceId === deviceId);
+
+      if (!device) {
+        await this.replyToMessage(messageId, '❌ Device not found');
+        return;
+      }
+
+      const wasActive = device.isActive;
+      const result = await this.bindingManager.unbindDevice(openId, deviceId);
+
+      if (!result) {
+        await this.replyToMessage(messageId, '❌ Failed to unbind device');
+        return;
+      }
+
+      let responseMessage = `✅ Device ${device.deviceName} has been unbound`;
+
+      // If we unbound the active device, inform about the new active device
+      if (wasActive) {
+        const newActiveDevice = await this.bindingManager.getActiveDevice(openId);
+        if (newActiveDevice) {
+          responseMessage += `\n\n📱 New active device: ${newActiveDevice.deviceName}`;
+        } else {
+          responseMessage += `\n\n⚠️ No devices remaining. Use /bind to add a new device.`;
+        }
+      }
+
+      await this.replyToMessage(messageId, responseMessage);
+    } catch (error) {
+      console.error('Error unbinding device:', error);
+      await this.replyToMessage(messageId, '❌ Failed to unbind device, please try again later');
     }
   }
 
@@ -305,12 +506,21 @@ export class FeishuLongConnHandler {
     const helpMessage = `📖 Feishu Remote Control Help
 
 Available commands:
-/bind <binding-code> - Bind your device
-/status - View device status
-/unbind - Unbind device
+/bind <binding-code> - Bind a new device
+/status - View all device statuses
+/unbind - Unbind all devices
+/device list - List all your devices
+/device switch <device-id> - Switch active device
+/device unbind <device-id> - Unbind a specific device
 /help - Show help information
 
-Regular messages will be sent directly to your device for execution.
+Regular messages will be sent to your active device for execution.
+
+Multi-device support:
+• You can bind multiple devices to your account
+• Only one device is active at a time
+• Commands are sent to the active device
+• Use /device switch to change active device
 
 Examples:
 • "List files in current directory"
@@ -335,6 +545,16 @@ Examples:
         return;
       }
 
+      // Get active device
+      const activeDevice = await this.bindingManager.getActiveDevice(openId);
+      if (!activeDevice) {
+        await this.replyToMessage(
+          messageId,
+          '❌ No active device found. Please use /device list to view your devices'
+        );
+        return;
+      }
+
       // Check if ConnectionHub is available
       if (!this.connectionHub) {
         await this.replyToMessage(messageId, '❌ Server error: ConnectionHub not initialized');
@@ -342,10 +562,10 @@ Examples:
       }
 
       // Check if device is online
-      if (!this.connectionHub.isDeviceOnline(binding.deviceId)) {
+      if (!this.connectionHub.isDeviceOnline(activeDevice.deviceId)) {
         await this.replyToMessage(
           messageId,
-          `❌ Device ${binding.deviceName} is currently offline, please ensure the device is started and connected to the server`
+          `❌ Device ${activeDevice.deviceName} is currently offline, please ensure the device is started and connected to the server`
         );
         return;
       }
@@ -359,11 +579,11 @@ Examples:
       const feishuMessageId = await this.sendStreamingStart(openId, '🤔 Processing...');
       console.log(`[FeishuHandler] Created card ${feishuMessageId} for command ${commandMessageId}`);
       if (this.onStartStreaming) {
-        this.onStartStreaming(commandMessageId, openId, feishuMessageId, binding.deviceId);
+        this.onStartStreaming(commandMessageId, openId, feishuMessageId, activeDevice.deviceId);
       }
 
       // Send command to device
-      const success = await this.connectionHub.sendToDevice(binding.deviceId, {
+      const success = await this.connectionHub.sendToDevice(activeDevice.deviceId, {
         type: MessageType.COMMAND,
         messageId: commandMessageId,
         timestamp: Date.now(),

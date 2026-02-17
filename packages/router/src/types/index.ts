@@ -10,13 +10,31 @@ export interface BindingCode {
   expiresAt: number;      // Expiration timestamp
 }
 
-// Binding record (stored in Redis)
-export interface UserBinding {
+// Legacy binding record (for migration from single-device schema)
+export interface LegacyUserBinding {
   openId: string;         // Feishu user open_id
   deviceId: string;       // Device unique identifier
   deviceName: string;     // "MacBook-Pro-xxx"
   boundAt: number;        // Binding time
   lastActiveAt: number;   // Last active time
+}
+
+// Single device binding record
+export interface DeviceBinding {
+  deviceId: string;       // Device unique identifier
+  deviceName: string;     // "MacBook-Pro-xxx"
+  boundAt: number;        // Binding time
+  lastActiveAt: number;   // Last active time
+  isActive: boolean;      // Whether this device is the active one
+}
+
+// User binding record (supports multiple devices)
+export interface UserBinding {
+  openId: string;                    // Feishu user open_id
+  devices: DeviceBinding[];          // Array of bound devices
+  activeDeviceId: string | null;     // Currently active device ID
+  createdAt: number;                 // First binding time
+  updatedAt: number;                 // Last update time
 }
 
 // WebSocket message type

@@ -7,7 +7,8 @@ import { BindingCode, UserBinding } from '../types';
 export class MemoryStore {
   private bindingCodes: Map<string, BindingCode> = new Map();
   private userBindings: Map<string, UserBinding> = new Map();
-  private deviceBindings: Map<string, UserBinding> = new Map();
+  // Reverse lookup: deviceId -> openId
+  private deviceToUserMap: Map<string, string> = new Map();
 
   /**
    * Store binding code with expiration
@@ -60,7 +61,11 @@ export class MemoryStore {
    */
   setUserBinding(openId: string, binding: UserBinding): void {
     this.userBindings.set(openId, binding);
-    this.deviceBindings.set(binding.deviceId, binding);
+
+    // Update reverse lookup for all devices
+    for (const device of binding.devices) {
+      this.deviceToUserMap.set(device.deviceId, openId);
+    }
   }
 
   /**
@@ -73,12 +78,12 @@ export class MemoryStore {
   }
 
   /**
-   * Get device binding
+   * Get user by device ID (reverse lookup)
    * @param deviceId Device unique identifier
-   * @returns User binding or null if not found
+   * @returns openId or null if not found
    */
-  getDeviceBinding(deviceId: string): UserBinding | null {
-    return this.deviceBindings.get(deviceId) || null;
+  getUserByDeviceId(deviceId: string): string | null {
+    return this.deviceToUserMap.get(deviceId) || null;
   }
 
   /**
@@ -89,20 +94,27 @@ export class MemoryStore {
     const binding = this.userBindings.get(openId);
     if (binding) {
       this.userBindings.delete(openId);
-      this.deviceBindings.delete(binding.deviceId);
+
+      // Remove all device mappings
+      for (const device of binding.devices) {
+        this.deviceToUserMap.delete(device.deviceId);
+      }
     }
   }
 
   /**
-   * Update user last active time
+   * Update user last active time (updates the active device)
    * @param openId Feishu user open_id
    */
   updateLastActive(openId: string): void {
     const binding = this.userBindings.get(openId);
-    if (binding) {
-      binding.lastActiveAt = Date.now();
-      this.userBindings.set(openId, binding);
-      this.deviceBindings.set(binding.deviceId, binding);
+    if (binding && binding.activeDeviceId) {
+      const activeDevice = binding.devices.find(d => d.deviceId === binding.activeDeviceId);
+      if (activeDevice) {
+        activeDevice.lastActiveAt = Date.now();
+        binding.updatedAt = Date.now();
+        this.userBindings.set(openId, binding);
+      }
     }
   }
 
@@ -112,7 +124,7 @@ export class MemoryStore {
   clear(): void {
     this.bindingCodes.clear();
     this.userBindings.clear();
-    this.deviceBindings.clear();
+    this.deviceToUserMap.clear();
   }
 
   /**
@@ -121,12 +133,12 @@ export class MemoryStore {
   getStats(): {
     bindingCodes: number;
     userBindings: number;
-    deviceBindings: number;
+    devices: number;
   } {
     return {
       bindingCodes: this.bindingCodes.size,
       userBindings: this.userBindings.size,
-      deviceBindings: this.deviceBindings.size,
+      devices: this.deviceToUserMap.size,
     };
   }
 }

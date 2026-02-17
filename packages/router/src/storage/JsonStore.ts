@@ -1,12 +1,13 @@
-import { BindingCode, UserBinding } from '../types';
+import { BindingCode, UserBinding, LegacyUserBinding } from '../types';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
 interface StoreData {
+  version: number;
   bindingCodes: Record<string, BindingCode>;
   userBindings: Record<string, UserBinding>;
-  deviceBindings: Record<string, UserBinding>;
+  deviceToUserMap: Record<string, string>;
 }
 
 /**
@@ -18,13 +19,15 @@ export class JsonStore {
   private data: StoreData;
   private saveTimer: NodeJS.Timeout | null = null;
   private readonly SAVE_DELAY = 1000; // Debounce saves by 1 second
+  private static readonly CURRENT_VERSION = 1;
 
   constructor(storePath?: string) {
     this.storePath = storePath || path.join(os.homedir(), '.remote-cli-router', 'bindings.json');
     this.data = {
+      version: JsonStore.CURRENT_VERSION,
       bindingCodes: {},
       userBindings: {},
-      deviceBindings: {},
+      deviceToUserMap: {},
     };
   }
 
@@ -39,7 +42,14 @@ export class JsonStore {
       // Try to load existing data
       try {
         const content = await fs.readFile(this.storePath, 'utf-8');
-        this.data = JSON.parse(content);
+        const rawData = JSON.parse(content);
+
+        // Check if migration is needed
+        if (!rawData.version) {
+          await this.migrateFromLegacy(rawData);
+        } else {
+          this.data = rawData;
+        }
 
         // Clean up expired binding codes on startup
         this.cleanupExpiredBindingCodes();
@@ -57,9 +67,47 @@ export class JsonStore {
   }
 
   /**
+   * Migrate from legacy single-device schema to multi-device schema
+   */
+  private async migrateFromLegacy(rawData: any): Promise<void> {
+    console.log('[JsonStore] Migrating legacy binding data to multi-device schema...');
+
+    const legacyUserBindings = (rawData.userBindings || {}) as Record<string, LegacyUserBinding>;
+    const newUserBindings: Record<string, UserBinding> = {};
+    const deviceToUserMap: Record<string, string> = {};
+    const now = Date.now();
+
+    for (const [openId, legacy] of Object.entries(legacyUserBindings)) {
+      newUserBindings[openId] = {
+        openId,
+        devices: [{
+          deviceId: legacy.deviceId,
+          deviceName: legacy.deviceName,
+          boundAt: legacy.boundAt,
+          lastActiveAt: legacy.lastActiveAt,
+          isActive: true,
+        }],
+        activeDeviceId: legacy.deviceId,
+        createdAt: legacy.boundAt,
+        updatedAt: now,
+      };
+
+      deviceToUserMap[legacy.deviceId] = openId;
+    }
+
+    this.data = {
+      version: JsonStore.CURRENT_VERSION,
+      bindingCodes: rawData.bindingCodes || {},
+      userBindings: newUserBindings,
+      deviceToUserMap,
+    };
+
+    await this.save();
+    console.log(`[JsonStore] Migration complete. Migrated ${Object.keys(newUserBindings).length} user(s).`);
+  }
+
+  /**
    * Store binding code with expiration
-   * @param code Binding code
-   * @param bindingCode Binding code object
    */
   async setBindingCode(code: string, bindingCode: BindingCode): Promise<void> {
     this.data.bindingCodes[code] = bindingCode;
@@ -68,8 +116,6 @@ export class JsonStore {
 
   /**
    * Get binding code
-   * @param code Binding code
-   * @returns Binding code object or null if not found/expired
    */
   getBindingCode(code: string): BindingCode | null {
     const bindingCode = this.data.bindingCodes[code];
@@ -90,7 +136,6 @@ export class JsonStore {
 
   /**
    * Delete binding code
-   * @param code Binding code
    */
   async deleteBindingCode(code: string): Promise<void> {
     delete this.data.bindingCodes[code];
@@ -99,57 +144,73 @@ export class JsonStore {
 
   /**
    * Set user binding
-   * @param openId Feishu user open_id
-   * @param binding User binding object
    */
   async setUserBinding(openId: string, binding: UserBinding): Promise<void> {
     this.data.userBindings[openId] = binding;
-    this.data.deviceBindings[binding.deviceId] = binding;
+    // Rebuild deviceToUserMap entries for this user
+    for (const device of binding.devices) {
+      this.data.deviceToUserMap[device.deviceId] = openId;
+    }
     await this.scheduleSave();
   }
 
   /**
    * Get user binding
-   * @param openId Feishu user open_id
-   * @returns User binding or null if not found
    */
   getUserBinding(openId: string): UserBinding | null {
     return this.data.userBindings[openId] || null;
   }
 
   /**
-   * Get device binding
-   * @param deviceId Device unique identifier
-   * @returns User binding or null if not found
+   * Get user openId by device ID (reverse lookup)
    */
-  getDeviceBinding(deviceId: string): UserBinding | null {
-    return this.data.deviceBindings[deviceId] || null;
+  getUserByDeviceId(deviceId: string): string | null {
+    return this.data.deviceToUserMap[deviceId] || null;
   }
 
   /**
-   * Delete user binding
-   * @param openId Feishu user open_id
+   * Set device-to-user mapping
+   */
+  async setDeviceToUserMap(deviceId: string, openId: string): Promise<void> {
+    this.data.deviceToUserMap[deviceId] = openId;
+    await this.scheduleSave();
+  }
+
+  /**
+   * Remove device-to-user mapping
+   */
+  async removeDeviceToUserMap(deviceId: string): Promise<void> {
+    delete this.data.deviceToUserMap[deviceId];
+    await this.scheduleSave();
+  }
+
+  /**
+   * Delete user binding and all associated device mappings
    */
   async deleteUserBinding(openId: string): Promise<void> {
     const binding = this.data.userBindings[openId];
     if (binding) {
+      // Remove all device-to-user mappings
+      for (const device of binding.devices) {
+        delete this.data.deviceToUserMap[device.deviceId];
+      }
       delete this.data.userBindings[openId];
-      delete this.data.deviceBindings[binding.deviceId];
       await this.scheduleSave();
     }
   }
 
   /**
-   * Update user last active time
-   * @param openId Feishu user open_id
+   * Update last active time for the active device of a user
    */
   async updateLastActive(openId: string): Promise<void> {
     const binding = this.data.userBindings[openId];
-    if (binding) {
-      binding.lastActiveAt = Date.now();
-      this.data.userBindings[openId] = binding;
-      this.data.deviceBindings[binding.deviceId] = binding;
-      await this.scheduleSave();
+    if (binding && binding.activeDeviceId) {
+      const device = binding.devices.find(d => d.deviceId === binding.activeDeviceId);
+      if (device) {
+        device.lastActiveAt = Date.now();
+        binding.updatedAt = Date.now();
+        await this.scheduleSave();
+      }
     }
   }
 
@@ -216,9 +277,10 @@ export class JsonStore {
    */
   async clear(): Promise<void> {
     this.data = {
+      version: JsonStore.CURRENT_VERSION,
       bindingCodes: {},
       userBindings: {},
-      deviceBindings: {},
+      deviceToUserMap: {},
     };
     await this.save();
   }
@@ -229,12 +291,12 @@ export class JsonStore {
   getStats(): {
     bindingCodes: number;
     userBindings: number;
-    deviceBindings: number;
+    devices: number;
   } {
     return {
       bindingCodes: Object.keys(this.data.bindingCodes).length,
       userBindings: Object.keys(this.data.userBindings).length,
-      deviceBindings: Object.keys(this.data.deviceBindings).length,
+      devices: Object.keys(this.data.deviceToUserMap).length,
     };
   }
 }
