@@ -224,7 +224,7 @@ describe('FeishuLongConnHandler', () => {
                 },
                 {
                   tag: 'markdown',
-                  content: '✅ Completed · Session: ABC123'
+                  content: 'Completed · Session: ABC123'
                 }
               ]
             }

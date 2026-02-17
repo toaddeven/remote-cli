@@ -162,9 +162,8 @@ describe('ToolFormatter', () => {
       const elements = createToolResultElement(toolResult);
 
       expect(elements).toHaveLength(2);
-      // First element should be the status markdown with emoji
+      // First element should be the status markdown
       expect(elements[0].tag).toBe('markdown');
-      expect(elements[0].content).toContain('✅'); // Success emoji
       expect(elements[0].content).toContain('SUCCESS');
       expect(elements[0].content).toContain('tool_abc'); // Truncated ID (8 chars)
       // Second element should be the content in markdown
@@ -182,9 +181,8 @@ describe('ToolFormatter', () => {
       const elements = createToolResultElement(toolResult);
 
       expect(elements).toHaveLength(2);
-      // First element should be the status markdown with emoji
+      // First element should be the status markdown
       expect(elements[0].tag).toBe('markdown');
-      expect(elements[0].content).toContain('❌'); // Error emoji
       expect(elements[0].content).toContain('ERROR');
       // Second element should be the error message in markdown
       expect(elements[1].tag).toBe('markdown');

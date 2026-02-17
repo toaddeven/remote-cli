@@ -306,16 +306,15 @@ export function createToolResultElement(resultInfo: ToolResultInfo): FeishuCardE
 
   // Determine status
   const statusColor = is_error ? 'red' : 'green';
-  const statusEmoji = is_error ? '❌' : '✅';
   const statusText = is_error ? 'ERROR' : 'SUCCESS';
 
-  // Build status text with emoji and tool_use_id
-  let statusDisplay = `${statusEmoji} <text_tag color='${statusColor}'>${statusText}</text_tag>`;
+  // Build status text with color tag and tool_use_id
+  let statusDisplay = `<text_tag color='${statusColor}'>${statusText}</text_tag>`;
   if (tool_use_id) {
     statusDisplay += ` · \`${tool_use_id.slice(0, 8)}\``;
   }
 
-  // Create status as markdown element with emoji
+  // Create status as markdown element
   const elements: FeishuCardElement[] = [createMarkdownElement(statusDisplay)];
 
   if (content && !is_error) {
@@ -323,7 +322,7 @@ export function createToolResultElement(resultInfo: ToolResultInfo): FeishuCardE
     const truncated = truncate(content, 500);
     elements.push(createMarkdownElement(`\`\`\`\n${truncated}\n\`\`\``));
   } else if (content && is_error) {
-    // For errors, show the error message (emoji already in status line)
+    // For errors, show the error message
     const truncated = truncate(content, 500);
     elements.push(createMarkdownElement(truncated));
   }

@@ -589,12 +589,12 @@ Examples:
       }
 
       // Build note content with session abbreviation if available
-      let noteContent = '✅ Completed';
+      let noteContent = 'Completed';
       if (sessionAbbr) {
         noteContent += ` · Session: ${sessionAbbr}`;
       }
 
-      // Add completion note element as markdown with emoji
+      // Add completion note element as markdown
       const finalElements = [
         ...elements,
         {
