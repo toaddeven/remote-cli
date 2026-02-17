@@ -843,6 +843,7 @@ Examples:
     const chunks: any[][] = [];
     let currentChunk: any[] = [];
     let currentChunkSize = 0;
+    let currentChunkTaggedNodes = 0;
 
     // Reserve elements for continuation indicators (they add ~2 elements and ~200 bytes)
     const continuationIndicatorSize = 200; // Approximate size of indicator element
@@ -851,11 +852,12 @@ Examples:
     for (let i = 0; i < elements.length; i++) {
       const element = elements[i];
       const elementSize = JSON.stringify(element).length;
+      const elementTaggedNodes = this.countTaggedNodes(element);
 
       // Check if adding this element would exceed limits
       // Reserve space for continuation indicators
       const wouldExceedElementLimit =
-        currentChunk.length >= (this.CARD_ELEMENT_LIMIT - continuationIndicatorCount);
+        currentChunkTaggedNodes + elementTaggedNodes > (this.CARD_ELEMENT_LIMIT - continuationIndicatorCount);
       const wouldExceedSizeLimit =
         currentChunkSize + elementSize + continuationIndicatorSize >
         (this.CARD_DATA_SIZE_LIMIT - this.CARD_SIZE_BUFFER);
@@ -863,23 +865,28 @@ Examples:
       if (currentChunk.length > 0 && (wouldExceedElementLimit || wouldExceedSizeLimit)) {
         // Start a new chunk
         chunks.push(currentChunk);
+        console.log(`[FeishuHandler] Chunk finished: ${currentChunk.length} top-level elements, ${currentChunkTaggedNodes} tagged nodes, ${currentChunkSize} bytes`);
         currentChunk = [];
         currentChunkSize = 0;
+        currentChunkTaggedNodes = 0;
       }
 
       currentChunk.push(element);
       currentChunkSize += elementSize;
+      currentChunkTaggedNodes += elementTaggedNodes;
     }
 
     // Add the last chunk if not empty
     if (currentChunk.length > 0) {
       chunks.push(currentChunk);
+      console.log(`[FeishuHandler] Chunk finished: ${currentChunk.length} top-level elements, ${currentChunkTaggedNodes} tagged nodes, ${currentChunkSize} bytes`);
     }
 
-    console.log(`[FeishuHandler] Split ${elements.length} elements into ${chunks.length} chunk(s)`);
+    console.log(`[FeishuHandler] Split ${elements.length} top-level elements into ${chunks.length} chunk(s)`);
     chunks.forEach((chunk, i) => {
       const chunkSize = JSON.stringify({ schema: '2.0', body: { elements: chunk } }).length;
-      console.log(`[FeishuHandler]   Chunk ${i + 1}: ${chunk.length} elements, ${chunkSize} bytes`);
+      const chunkTaggedNodes = chunk.reduce((sum, el) => sum + this.countTaggedNodes(el), 0);
+      console.log(`[FeishuHandler]   Chunk ${i + 1}: ${chunk.length} top-level, ${chunkTaggedNodes} tagged nodes, ${chunkSize} bytes`);
     });
 
     // Add continuation indicators between chunks
@@ -910,14 +917,62 @@ Examples:
   }
 
   /**
+   * Recursively count all nodes with 'tag' property in the element tree
+   * According to Feishu docs, all nodes with 'tag' property count towards the 200 limit
+   *
+   * @param obj The object or array to count tags in
+   * @returns Total count of nodes with 'tag' property
+   */
+  private countTaggedNodes(obj: any): number {
+    if (!obj || typeof obj !== 'object') {
+      return 0;
+    }
+
+    let count = 0;
+
+    // If this object has a 'tag' property, count it
+    if (obj.tag) {
+      count = 1;
+    }
+
+    // Recursively count in all properties
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        const value = obj[key];
+        if (Array.isArray(value)) {
+          // Recursively count in array elements
+          for (const item of value) {
+            count += this.countTaggedNodes(item);
+          }
+        } else if (typeof value === 'object' && value !== null) {
+          // Recursively count in nested objects
+          count += this.countTaggedNodes(value);
+        }
+      }
+    }
+
+    return count;
+  }
+
+  /**
    * Check if elements array needs to be split based on Feishu limits
    * @param elements Array of elements to check
    * @returns true if splitting is needed
    */
   private checkIfElementsNeedSplitting(elements: any[]): boolean {
-    // Check element count limit
-    if (elements.length > this.CARD_ELEMENT_LIMIT) {
-      console.log(`[FeishuHandler] Element count (${elements.length}) exceeds limit (${this.CARD_ELEMENT_LIMIT})`);
+    // Safety check: ensure elements is an array
+    if (!Array.isArray(elements)) {
+      console.error('[FeishuHandler] checkIfElementsNeedSplitting received non-array:', typeof elements);
+      return false;
+    }
+
+    // Check element count limit - MUST count ALL nodes with 'tag' property recursively
+    const totalTaggedNodes = elements.reduce((sum, element) => sum + this.countTaggedNodes(element), 0);
+
+    console.log(`[FeishuHandler] Element count check: top-level=${elements.length}, total tagged nodes=${totalTaggedNodes}, limit=${this.CARD_ELEMENT_LIMIT}`);
+
+    if (totalTaggedNodes > this.CARD_ELEMENT_LIMIT) {
+      console.log(`[FeishuHandler] Total tagged nodes (${totalTaggedNodes}) exceeds limit (${this.CARD_ELEMENT_LIMIT})`);
       return true;
     }
 

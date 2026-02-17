@@ -36,7 +36,8 @@ describe('FeishuLongConnHandler', () => {
         message: {
           create: vi.fn(),
           patch: vi.fn(),
-          reply: vi.fn()
+          reply: vi.fn(),
+          delete: vi.fn()
         }
       }
     };
@@ -777,6 +778,118 @@ describe('FeishuLongConnHandler', () => {
       // Should create continuation cards if needed
       // Note: The completion note adds one more element, so it should still trigger chunking
       expect(mockClient.im.message.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('Recursive tagged node counting', () => {
+    it('should count simple top-level elements', () => {
+      const handler = new FeishuLongConnHandler({
+        appId: 'test_app_id',
+        appSecret: 'test_secret',
+        store: {} as any,
+      });
+      const elements = [
+        { tag: 'markdown', content: 'Hello' },
+        { tag: 'markdown', content: 'World' },
+      ];
+
+      // Access private method via any cast for testing
+      const count = (handler as any).countTaggedNodes(elements[0]) + (handler as any).countTaggedNodes(elements[1]);
+      expect(count).toBe(2);
+    });
+
+    it('should count nested elements in containers', () => {
+      const handler = new FeishuLongConnHandler({
+        appId: 'test_app_id',
+        appSecret: 'test_secret',
+        store: {} as any,
+      });
+      const element = {
+        tag: 'div',
+        elements: [
+          { tag: 'markdown', content: 'Text 1' },
+          { tag: 'markdown', content: 'Text 2' },
+          {
+            tag: 'action',
+            actions: [
+              { tag: 'button', text: { tag: 'plain_text', content: 'Click' } },
+            ],
+          },
+        ],
+      };
+
+      // Should count: div (1) + markdown (1) + markdown (1) + action (1) + button (1) + plain_text (1) = 6
+      const count = (handler as any).countTaggedNodes(element);
+      expect(count).toBe(6);
+    });
+
+    it('should count deeply nested elements', () => {
+      const handler = new FeishuLongConnHandler({
+        appId: 'test_app_id',
+        appSecret: 'test_secret',
+        store: {} as any,
+      });
+      const element = {
+        tag: 'div',
+        elements: [
+          {
+            tag: 'column_set',
+            columns: [
+              {
+                tag: 'column',
+                elements: [
+                  { tag: 'markdown', content: 'Column 1' },
+                  { tag: 'image', img_key: 'img_123' },
+                ],
+              },
+              {
+                tag: 'column',
+                elements: [
+                  { tag: 'markdown', content: 'Column 2' },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      // Should count: div (1) + column_set (1) + column (1) + markdown (1) + image (1) + column (1) + markdown (1) = 7
+      const count = (handler as any).countTaggedNodes(element);
+      expect(count).toBe(7);
+    });
+
+    it('should count elements with text objects', () => {
+      const handler = new FeishuLongConnHandler({
+        appId: 'test_app_id',
+        appSecret: 'test_secret',
+        store: {} as any,
+      });
+      const element = {
+        tag: 'button',
+        text: { tag: 'plain_text', content: 'Click me' },
+        type: 'primary',
+      };
+
+      // Should count: button (1) + plain_text (1) = 2
+      const count = (handler as any).countTaggedNodes(element);
+      expect(count).toBe(2);
+    });
+
+    it('should handle elements without tag property', () => {
+      const handler = new FeishuLongConnHandler({
+        appId: 'test_app_id',
+        appSecret: 'test_secret',
+        store: {} as any,
+      });
+      const element = {
+        content: 'No tag here',
+        nested: {
+          data: 'Also no tag',
+        },
+      };
+
+      const count = (handler as any).countTaggedNodes(element);
+      expect(count).toBe(0);
     });
   });
 
