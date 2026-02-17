@@ -609,12 +609,9 @@ export class ClaudePersistentExecutor extends EventEmitter {
           console.log(`[ClaudePersistent] Result received, subtype=${message.subtype}, has result=${!!message.result}, has error=${message.is_error}`);
           console.log(`[ClaudePersistent] Result message FULL: ${JSON.stringify(message)}`);
 
-          // Send result content to stream callback if present
-          // This ensures the final content is displayed even if assistant messages were empty
-          if (message.result && this.currentStreamCallback) {
-            console.log(`[ClaudePersistent] Sending result to stream callback, length=${message.result.length}`);
-            this.currentStreamCallback(message.result);
-          }
+          // NOTE: Do NOT send message.result to stream callback here!
+          // The result content has already been sent via 'assistant' messages (type: 'text' blocks)
+          // Sending it again would cause duplicate display in the UI
 
           // Only complete if we're not waiting for user input
           // The command completion should happen after all content is processed
