@@ -306,38 +306,27 @@ export function createToolResultElement(resultInfo: ToolResultInfo): FeishuCardE
 
   // Determine status
   const statusColor = is_error ? 'red' : 'green';
-  const statusIcon = is_error ? 'close-circle-filled' : 'check-circle-filled';
+  const statusEmoji = is_error ? '❌' : '✅';
   const statusText = is_error ? 'ERROR' : 'SUCCESS';
 
-  // Build markdown content
-  let markdownContent = `<text_tag color='${statusColor}'>${statusText}</text_tag>`;
-
+  // Build status text with emoji and tool_use_id
+  let statusDisplay = `${statusEmoji} <text_tag color='${statusColor}'>${statusText}</text_tag>`;
   if (tool_use_id) {
-    markdownContent += ` · \`${tool_use_id.slice(0, 8)}\``;
+    statusDisplay += ` · \`${tool_use_id.slice(0, 8)}\``;
   }
 
-  // Add result content if present and not too long
-  if (content) {
+  // Create status as markdown element with emoji
+  const elements: FeishuCardElement[] = [createMarkdownElement(statusDisplay)];
+
+  if (content && !is_error) {
+    // For successful results, show the content in a code block
     const truncated = truncate(content, 500);
-    markdownContent += `\n\n\`\`\`\n${truncated}\n\`\`\``;
+    elements.push(createMarkdownElement(`\`\`\`\n${truncated}\n\`\`\``));
+  } else if (content && is_error) {
+    // For errors, show the error message (emoji already in status line)
+    const truncated = truncate(content, 500);
+    elements.push(createMarkdownElement(truncated));
   }
 
-  // Create status div with icon
-  const statusDiv: FeishuCardElement = {
-    tag: 'div',
-    text: {
-      tag: 'plain_text',
-      content: statusText,
-    },
-    icon: {
-      tag: 'standard_icon',
-      token: statusIcon,
-      color: statusColor,
-    },
-  };
-
-  return [
-    createMarkdownElement(markdownContent),
-    statusDiv,
-  ];
+  return elements;
 }

@@ -594,20 +594,12 @@ Examples:
         noteContent += ` · Session: ${sessionAbbr}`;
       }
 
-      // Add completion note element
+      // Add completion note element as markdown with emoji
       const finalElements = [
         ...elements,
         {
-          tag: 'div',
-          text: {
-            tag: 'plain_text',
-            content: noteContent,
-          },
-          icon: {
-            tag: 'standard_icon',
-            token: 'check-circle-filled',
-            color: 'green',
-          },
+          tag: 'markdown',
+          content: noteContent,
         },
       ];
 

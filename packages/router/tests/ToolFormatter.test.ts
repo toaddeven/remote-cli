@@ -162,12 +162,14 @@ describe('ToolFormatter', () => {
       const elements = createToolResultElement(toolResult);
 
       expect(elements).toHaveLength(2);
+      // First element should be the status markdown with emoji
       expect(elements[0].tag).toBe('markdown');
+      expect(elements[0].content).toContain('✅'); // Success emoji
       expect(elements[0].content).toContain('SUCCESS');
       expect(elements[0].content).toContain('tool_abc'); // Truncated ID (8 chars)
-      expect(elements[1].tag).toBe('div');
-      expect(elements[1].icon.token).toBe('check-circle-filled');
-      expect(elements[1].icon.color).toBe('green');
+      // Second element should be the content in markdown
+      expect(elements[1].tag).toBe('markdown');
+      expect(elements[1].content).toContain('Command succeeded');
     });
 
     it('should create error tool result elements', () => {
@@ -180,9 +182,13 @@ describe('ToolFormatter', () => {
       const elements = createToolResultElement(toolResult);
 
       expect(elements).toHaveLength(2);
+      // First element should be the status markdown with emoji
+      expect(elements[0].tag).toBe('markdown');
+      expect(elements[0].content).toContain('❌'); // Error emoji
       expect(elements[0].content).toContain('ERROR');
-      expect(elements[1].icon.token).toBe('close-circle-filled');
-      expect(elements[1].icon.color).toBe('red');
+      // Second element should be the error message in markdown
+      expect(elements[1].tag).toBe('markdown');
+      expect(elements[1].content).toContain('Command failed');
     });
 
     it('should truncate long result content', () => {
@@ -194,8 +200,11 @@ describe('ToolFormatter', () => {
       };
 
       const elements = createToolResultElement(toolResult);
-      expect(elements[0].content.length).toBeLessThan(longContent.length);
-      expect(elements[0].content).toContain('...');
+      // elements[0] is the status markdown, elements[1] is the content markdown
+      expect(elements).toHaveLength(2);
+      expect(elements[1].tag).toBe('markdown');
+      expect(elements[1].content.length).toBeLessThan(longContent.length);
+      expect(elements[1].content).toContain('...');
     });
   });
 });
