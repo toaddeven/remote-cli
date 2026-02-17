@@ -156,7 +156,7 @@ describe('ToolFormatter', () => {
   });
 
   describe('createToolResultElement', () => {
-    it('should create success tool result elements', () => {
+    it('should create success tool result elements with collapsible panel', () => {
       const toolResult: ToolResultInfo = {
         tool_use_id: 'tool_abc123',
         content: 'Command succeeded',
@@ -165,17 +165,19 @@ describe('ToolFormatter', () => {
 
       const elements = createToolResultElement(toolResult);
 
-      expect(elements).toHaveLength(2);
-      // First element should be the status markdown
-      expect(elements[0].tag).toBe('markdown');
-      expect(elements[0].content).toContain('SUCCESS');
-      expect(elements[0].content).toContain('tool_abc'); // Truncated ID (8 chars)
-      // Second element should be the content in markdown
-      expect(elements[1].tag).toBe('markdown');
-      expect(elements[1].content).toContain('Command succeeded');
+      expect(elements).toHaveLength(1);
+      // Should be a collapsible_panel
+      expect(elements[0].tag).toBe('collapsible_panel');
+      expect(elements[0].expanded).toBe(false);
+      // Header should contain status and tool ID
+      expect(elements[0].header.title.content).toContain('SUCCESS');
+      expect(elements[0].header.title.content).toContain('✅');
+      expect(elements[0].header.title.content).toContain('tool_abc'); // Truncated ID (8 chars)
+      // Content should be in the panel's elements
+      expect(elements[0].elements[0].content).toContain('Command succeeded');
     });
 
-    it('should create error tool result elements', () => {
+    it('should create error tool result elements with collapsible panel', () => {
       const toolResult: ToolResultInfo = {
         tool_use_id: 'tool_xyz',
         content: 'Command failed',
@@ -184,13 +186,15 @@ describe('ToolFormatter', () => {
 
       const elements = createToolResultElement(toolResult);
 
-      expect(elements).toHaveLength(2);
-      // First element should be the status markdown
-      expect(elements[0].tag).toBe('markdown');
-      expect(elements[0].content).toContain('ERROR');
-      // Second element should be the error message in markdown
-      expect(elements[1].tag).toBe('markdown');
-      expect(elements[1].content).toContain('Command failed');
+      expect(elements).toHaveLength(1);
+      // Should be a collapsible_panel
+      expect(elements[0].tag).toBe('collapsible_panel');
+      expect(elements[0].expanded).toBe(false);
+      // Header should contain error status and tool ID
+      expect(elements[0].header.title.content).toContain('ERROR');
+      expect(elements[0].header.title.content).toContain('❌');
+      // Content should be in the panel's elements
+      expect(elements[0].elements[0].content).toContain('Command failed');
     });
 
     it('should truncate long result content', () => {
@@ -202,11 +206,26 @@ describe('ToolFormatter', () => {
       };
 
       const elements = createToolResultElement(toolResult);
-      // elements[0] is the status markdown, elements[1] is the content markdown
-      expect(elements).toHaveLength(2);
-      expect(elements[1].tag).toBe('markdown');
-      expect(elements[1].content.length).toBeLessThan(longContent.length);
-      expect(elements[1].content).toContain('...');
+      expect(elements).toHaveLength(1);
+      expect(elements[0].tag).toBe('collapsible_panel');
+      // Content should be truncated
+      expect(elements[0].elements[0].content.length).toBeLessThan(longContent.length);
+      expect(elements[0].elements[0].content).toContain('...');
+    });
+
+    it('should handle empty content', () => {
+      const toolResult: ToolResultInfo = {
+        tool_use_id: 'tool_xyz',
+        content: '',
+        is_error: false,
+      };
+
+      const elements = createToolResultElement(toolResult);
+
+      expect(elements).toHaveLength(1);
+      expect(elements[0].tag).toBe('collapsible_panel');
+      // Should show "no output" placeholder
+      expect(elements[0].elements[0].content).toContain('no output');
     });
   });
 });

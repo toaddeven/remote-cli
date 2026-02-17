@@ -321,7 +321,7 @@ export function createToolUseElement(toolInfo: ToolUseInfo): FeishuCardElement[]
 }
 
 /**
- * Create a Feishu Card 2.0 tool result element
+ * Create a Feishu Card 2.0 tool result element with collapsible panel
  */
 export function createToolResultElement(resultInfo: ToolResultInfo): FeishuCardElement[] {
   const { tool_use_id, content, is_error } = resultInfo;
@@ -329,25 +329,52 @@ export function createToolResultElement(resultInfo: ToolResultInfo): FeishuCardE
   // Determine status
   const statusColor = is_error ? 'red' : 'green';
   const statusText = is_error ? 'ERROR' : 'SUCCESS';
+  const statusEmoji = is_error ? '❌' : '✅';
 
-  // Build status text with color tag and tool_use_id
-  let statusDisplay = `<text_tag color='${statusColor}'>${statusText}</text_tag>`;
+  // Build header title with status, emoji, and tool_use_id
+  let headerTitle = `<text_tag color='${statusColor}'>${statusEmoji} ${statusText}</text_tag>`;
   if (tool_use_id) {
-    statusDisplay += ` · \`${tool_use_id.slice(0, 8)}\``;
+    headerTitle += ` · \`${tool_use_id.slice(0, 8)}\``;
   }
 
-  // Create status as markdown element
-  const elements: FeishuCardElement[] = [createMarkdownElement(statusDisplay)];
+  // Prepare content elements inside the collapsible panel
+  const panelElements: FeishuCardElement[] = [];
 
   if (content && !is_error) {
     // For successful results, show the content in a code block
     const truncated = truncate(content, 500);
-    elements.push(createMarkdownElement(`\`\`\`\n${truncated}\n\`\`\``));
+    panelElements.push(createMarkdownElement(`\`\`\`\n${truncated}\n\`\`\``));
   } else if (content && is_error) {
     // For errors, show the error message
     const truncated = truncate(content, 500);
-    elements.push(createMarkdownElement(truncated));
+    panelElements.push(createMarkdownElement(truncated));
+  } else {
+    // No content
+    panelElements.push(createMarkdownElement('_(no output)_'));
   }
 
-  return elements;
+  // Create collapsible panel with result details inside
+  const collapsiblePanel: FeishuCardElement = {
+    tag: 'collapsible_panel',
+    expanded: false,
+    header: {
+      title: {
+        tag: 'markdown',
+        content: headerTitle,
+      },
+      vertical_align: 'center',
+      icon: {
+        tag: 'standard_icon',
+        token: 'down-small-ccm_outlined',
+        size: '14px 14px',
+      },
+      icon_position: 'right',
+      icon_expanded_angle: -180,
+    },
+    vertical_spacing: '8px',
+    padding: '4px 8px',
+    elements: panelElements,
+  };
+
+  return [collapsiblePanel];
 }
