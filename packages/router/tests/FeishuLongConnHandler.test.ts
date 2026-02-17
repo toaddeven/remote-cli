@@ -554,9 +554,9 @@ describe('FeishuLongConnHandler', () => {
       expect(chunks[0]).toEqual(elements);
     });
 
-    it('should split when element count exceeds CARD_ELEMENT_LIMIT (100)', () => {
-      // Create 150 elements to exceed the new conservative limit
-      const elements = Array.from({ length: 150 }, (_, i) => ({
+    it('should split when element count exceeds CARD_ELEMENT_LIMIT (150)', () => {
+      // Create 200 elements to exceed the new conservative limit of 150
+      const elements = Array.from({ length: 200 }, (_, i) => ({
         tag: 'markdown',
         content: `Element ${i}`,
       }));
@@ -566,9 +566,9 @@ describe('FeishuLongConnHandler', () => {
       // Should be split into multiple chunks
       expect(chunks.length).toBeGreaterThan(1);
 
-      // Each chunk should have at most 102 elements (100 elements + 2 indicators max)
+      // Each chunk should have at most 152 elements (150 elements + 2 indicators max)
       chunks.forEach((chunk: any[]) => {
-        expect(chunk.length).toBeLessThanOrEqual(102);
+        expect(chunk.length).toBeLessThanOrEqual(152);
       });
 
       // Count original elements (excluding continuation indicators)
@@ -579,7 +579,7 @@ describe('FeishuLongConnHandler', () => {
         );
         return sum + originalElements.length;
       }, 0);
-      expect(totalOriginalElements).toBe(150);
+      expect(totalOriginalElements).toBe(200);
     });
 
     it('should split when JSON size exceeds CARD_DATA_SIZE_LIMIT', () => {
@@ -898,8 +898,8 @@ describe('FeishuLongConnHandler', () => {
       const messageId = 'msg_reuse';
       const openId = 'test_open_id';
 
-      // First update: create 2 cards (original + 1 continuation)
-      const elements1 = Array.from({ length: 150 }, (_, i) => ({
+      // First update: create 2 cards (original + 1 continuation) with 180 elements (exceeds 150 limit)
+      const elements1 = Array.from({ length: 180 }, (_, i) => ({
         tag: 'markdown',
         content: `Element ${i}`,
       }));
@@ -914,8 +914,8 @@ describe('FeishuLongConnHandler', () => {
       const createCallCount1 = mockClient.im.message.create.mock.calls.length;
       const patchCallCount1 = mockClient.im.message.patch.mock.calls.length;
 
-      // Second update: still needs 2 cards, should reuse the continuation card
-      const elements2 = Array.from({ length: 160 }, (_, i) => ({
+      // Second update: still needs 2 cards with 190 elements, should reuse the continuation card
+      const elements2 = Array.from({ length: 190 }, (_, i) => ({
         tag: 'markdown',
         content: `Updated ${i}`,
       }));
@@ -936,8 +936,8 @@ describe('FeishuLongConnHandler', () => {
       const messageId = 'msg_expand';
       const openId = 'test_open_id';
 
-      // First update: 150 elements -> 2 cards
-      const elements1 = Array.from({ length: 150 }, (_, i) => ({
+      // First update: 180 elements -> 2 cards (exceeds 150 limit)
+      const elements1 = Array.from({ length: 180 }, (_, i) => ({
         tag: 'markdown',
         content: `Element ${i}`,
       }));
@@ -951,8 +951,8 @@ describe('FeishuLongConnHandler', () => {
       await handler.updateStreamingMessage(messageId, elements1, openId);
       const createCallCount1 = mockClient.im.message.create.mock.calls.length;
 
-      // Second update: 250 elements -> needs 3 cards
-      const elements2 = Array.from({ length: 250 }, (_, i) => ({
+      // Second update: 350 elements -> needs 3 cards (350 / 150 = 2.33, rounds to 3)
+      const elements2 = Array.from({ length: 350 }, (_, i) => ({
         tag: 'markdown',
         content: `More ${i}`,
       }));

@@ -28,8 +28,9 @@ export class FeishuLongConnHandler {
   // Feishu message size limit (4000 chars per message) - DEPRECATED for Card 2.0
   private readonly FEISHU_MESSAGE_LIMIT = 4000;
   // Feishu Card 2.0 limits (from official docs)
-  // Note: Using conservative limits - official says 200, but we use 100 to be safe
-  private readonly CARD_ELEMENT_LIMIT = 100; // Conservative: 100 components/elements per card
+  // Note: Using conservative limits - official says 200, we use 150 with proper recursive counting
+  // The 150 limit leaves a 50-node safety buffer while still being practical
+  private readonly CARD_ELEMENT_LIMIT = 150; // Conservative: 150 tagged nodes per card (official: 200)
   private readonly CARD_DATA_SIZE_LIMIT = 3000000; // Max 3MB (3,000,000 chars) for data field
   private readonly CARD_SIZE_BUFFER = 100000; // Safety buffer: use 2.9MB instead of 3MB
   // Track message chains: messageId -> [messageId1, messageId2, ...]
@@ -817,11 +818,14 @@ Examples:
    * Split Card 2.0 elements into chunks based on Feishu limits
    *
    * Feishu Card 2.0 has two main limits:
-   * 1. Element count: Max 200 components/elements per card
+   * 1. Element count: Max 200 tagged nodes per card (we use 150 for safety)
    * 2. Data size: Max 3,000,000 characters in the data field (JSON.stringify result)
    *
    * This function splits elements array into chunks that satisfy both limits,
    * and adds continuation indicators between chunks for better UX.
+   *
+   * Note: Element counting uses recursive tag counting - all nodes with 'tag' property
+   * are counted, including nested components, text elements, and container children.
    *
    * @param elements Array of Feishu Card 2.0 elements
    * @returns Array of element chunks, each satisfying Feishu's limits
