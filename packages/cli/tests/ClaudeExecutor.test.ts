@@ -11,15 +11,19 @@ vi.mock('child_process', () => ({
 // Mock fs for session file operations
 vi.mock('fs', () => ({
   default: {
-    existsSync: vi.fn(() => false),
+    existsSync: vi.fn(() => true),  // Default to true for working directory checks
     readFileSync: vi.fn(),
     writeFileSync: vi.fn(),
     unlinkSync: vi.fn(),
+    readdirSync: vi.fn(() => []),
+    statSync: vi.fn(),
   },
-  existsSync: vi.fn(() => false),
+  existsSync: vi.fn(() => true),  // Default to true for working directory checks
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
+  readdirSync: vi.fn(() => []),
+  statSync: vi.fn(),
 }));
 
 import { spawn } from 'child_process';
@@ -413,6 +417,27 @@ describe('ClaudeExecutor', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
+    });
+
+    it('should reject execution if working directory does not exist', async () => {
+      // Mock fs.existsSync to return true for session file checks
+      // but false for the working directory validation in executeWithClaudeCLI
+      let callCount = 0;
+      mockFs.existsSync.mockImplementation((path: string) => {
+        callCount++;
+        // First few calls are for session file operations, return false (no session file)
+        // Then when checking the working directory in executeWithClaudeCLI, return false
+        if (callCount <= 2) {
+          return false; // No session file
+        }
+        return false; // Working directory doesn't exist
+      });
+
+      const result = await executor.execute('test command');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Working directory does not exist');
+      expect(mockSpawn).not.toHaveBeenCalled();
     });
   });
 

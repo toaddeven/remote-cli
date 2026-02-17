@@ -250,6 +250,11 @@ export class ClaudePersistentExecutor extends EventEmitter {
     this.isStarting = true;
 
     try {
+      // Verify working directory exists
+      if (!fs.existsSync(this.currentWorkingDirectory)) {
+        throw new Error(`Working directory does not exist: ${this.currentWorkingDirectory}`);
+      }
+
       // Build arguments
       // Note: --output-format=stream-json requires --verbose
       const args: string[] = [

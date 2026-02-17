@@ -245,6 +245,12 @@ export class ClaudeExecutor {
       const outputChunks: string[] = [];
       let timeoutTimer: NodeJS.Timeout | undefined;
 
+      // Verify working directory exists
+      if (!fs.existsSync(this.currentWorkingDirectory)) {
+        reject(new Error(`Working directory does not exist: ${this.currentWorkingDirectory}`));
+        return;
+      }
+
       // Build claude command arguments
       const args: string[] = ['--print'];
 
