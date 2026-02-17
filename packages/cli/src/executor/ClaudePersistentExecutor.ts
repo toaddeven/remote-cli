@@ -1,7 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import { claudeCodeHooks } from '../hooks/ClaudeCodeHooks';
-import { formatToolUseMessage, formatToolResultMessage, createResponseSeparator } from '../utils/FeishuMessageFormatter';
 import { StructuredContent, ContentBlockUnion, ToolUseInfo, ToolResultInfo } from '../types';
 import fs from 'fs';
 import path from 'path';
@@ -169,10 +168,6 @@ export class ClaudePersistentExecutor extends EventEmitter {
   private currentCommandResolve?: (result: PersistentClaudeResult) => void;
   private currentCommandReject?: (error: Error) => void;
   private currentTimeoutTimer?: NodeJS.Timeout;
-
-  // Track tool execution state for separator insertion
-  private hasSeenToolUse = false;
-  private hasSentSeparator = false;
 
   // Structured content collection for rich formatting
   private structuredContentBlocks: ContentBlockUnion[] = [];
@@ -648,8 +643,6 @@ export class ClaudePersistentExecutor extends EventEmitter {
             for (const block of contentBlocks) {
               if (block.type === 'tool_use') {
                 console.log(`[ClaudePersistent] Tool use detected: ${block.name}, id=${block.id}`);
-                // Mark that we've seen a tool use
-                this.hasSeenToolUse = true;
 
                 // Send structured tool use event if callback is available
                 if (this.currentToolUseCallback) {
@@ -660,35 +653,15 @@ export class ClaudePersistentExecutor extends EventEmitter {
                   });
                 }
 
-                // Format tool use message with compact indicator (for backward compatibility)
-                const toolMsg = formatToolUseMessage({
-                  name: block.name || 'unknown',
-                  id: block.id || 'unknown',
-                  input: block.input || {}
-                });
-                // Add visual separator before tool use (not after, to keep tool_use and tool_result together)
-                const separator = '\n────────────── TOOL USE ──────────────\n';
-                if (this.currentStreamCallback) {
-                  this.currentStreamCallback(separator + toolMsg + '\n');
-                }
-                this.currentOutputBuffer.push(separator + toolMsg + '\n');
+                // Note: We no longer send text-based tool use separators.
+                // Tool use is now communicated via structured events (onToolUse callback)
+                // which are converted to Feishu Card 2.0 elements by the router.
 
                 // NOTE: Do NOT emit tool:afterExecution hook here!
                 // tool_use is just a REQUEST to execute the tool, not the actual execution result.
                 // The tool will be executed by Claude CLI, and we'll receive the result in a 'user' message
                 // with tool_result content. We should emit the hook when we receive tool_result.
               } else if (block.type === 'text' && block.text) {
-                // If we've seen tool use but haven't sent separator yet, send it now
-                // This indicates Claude is now providing the final response after tool execution
-                if (this.hasSeenToolUse && !this.hasSentSeparator) {
-                  const separator = createResponseSeparator();
-                  this.currentOutputBuffer.push(separator);
-                  if (this.currentStreamCallback) {
-                    this.currentStreamCallback(separator);
-                  }
-                  this.hasSentSeparator = true;
-                }
-
                 // Stream text content to callback for real-time display
                 this.currentOutputBuffer.push(block.text);
                 if (this.currentStreamCallback) {
@@ -737,18 +710,9 @@ export class ClaudePersistentExecutor extends EventEmitter {
                   });
                 }
 
-                // Display tool result to user with compact format (for backward compatibility)
-                const resultMsg = formatToolResultMessage({
-                  id: block.id || 'unknown',
-                  content: block.content || '(no content)',
-                  isError: isError
-                });
-                // Add separator after tool result (separates this tool pair from next tool)
-                const separator = '\n────────────────────────────────────\n';
-                if (this.currentStreamCallback) {
-                  this.currentStreamCallback(resultMsg + separator);
-                }
-                this.currentOutputBuffer.push(resultMsg + separator);
+                // Note: We no longer send text-based tool result messages.
+                // Tool results are now communicated via structured events (onToolResult callback)
+                // which are converted to Feishu Card 2.0 elements by the router.
 
                 // Emit hook for tool execution completion (this is the ACTUAL execution result)
                 // Note: We don't have the original tool name here, but we have the tool_use_id
@@ -1018,9 +982,6 @@ export class ClaudePersistentExecutor extends EventEmitter {
       this.inputDetectionTimer = undefined;
     }
     this.isWaitingForInput = false;
-    // Reset tool execution tracking flags
-    this.hasSeenToolUse = false;
-    this.hasSentSeparator = false;
     // Note: currentTaskId and currentTaskStartTime are cleared separately after hooks
   }
 
