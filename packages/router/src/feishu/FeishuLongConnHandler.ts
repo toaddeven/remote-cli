@@ -25,8 +25,13 @@ export class FeishuLongConnHandler {
   private connectionHub: ConnectionHub | null = null;
   private appId: string;
   private appSecret: string;
-  // Feishu message size limit (4000 chars per message)
+  // Feishu message size limit (4000 chars per message) - DEPRECATED for Card 2.0
   private readonly FEISHU_MESSAGE_LIMIT = 4000;
+  // Feishu Card 2.0 limits (from official docs)
+  // Note: Using conservative limits - official says 200, but we use 100 to be safe
+  private readonly CARD_ELEMENT_LIMIT = 100; // Conservative: 100 components/elements per card
+  private readonly CARD_DATA_SIZE_LIMIT = 3000000; // Max 3MB (3,000,000 chars) for data field
+  private readonly CARD_SIZE_BUFFER = 100000; // Safety buffer: use 2.9MB instead of 3MB
   // Track message chains: messageId -> [messageId1, messageId2, ...]
   private messageChains: Map<string, string[]> = new Map();
   // Track the last processed text length for each message chain
@@ -809,6 +814,164 @@ Examples:
   }
 
   /**
+   * Split Card 2.0 elements into chunks based on Feishu limits
+   *
+   * Feishu Card 2.0 has two main limits:
+   * 1. Element count: Max 200 components/elements per card
+   * 2. Data size: Max 3,000,000 characters in the data field (JSON.stringify result)
+   *
+   * This function splits elements array into chunks that satisfy both limits,
+   * and adds continuation indicators between chunks for better UX.
+   *
+   * @param elements Array of Feishu Card 2.0 elements
+   * @returns Array of element chunks, each satisfying Feishu's limits
+   */
+  private splitElementsIntoChunks(elements: any[]): any[][] {
+    // If empty or very small, return as-is
+    if (elements.length === 0) {
+      return [elements];
+    }
+
+    // Check if we need to split at all
+    const needsSplitting = this.checkIfElementsNeedSplitting(elements);
+    console.log(`[FeishuHandler] Elements check: count=${elements.length}, needsSplitting=${needsSplitting}`);
+
+    if (!needsSplitting) {
+      return [elements];
+    }
+
+    const chunks: any[][] = [];
+    let currentChunk: any[] = [];
+    let currentChunkSize = 0;
+
+    // Reserve elements for continuation indicators (they add ~2 elements and ~200 bytes)
+    const continuationIndicatorSize = 200; // Approximate size of indicator element
+    const continuationIndicatorCount = 2; // Maximum 2 indicators per chunk (start + end)
+
+    for (let i = 0; i < elements.length; i++) {
+      const element = elements[i];
+      const elementSize = JSON.stringify(element).length;
+
+      // Check if adding this element would exceed limits
+      // Reserve space for continuation indicators
+      const wouldExceedElementLimit =
+        currentChunk.length >= (this.CARD_ELEMENT_LIMIT - continuationIndicatorCount);
+      const wouldExceedSizeLimit =
+        currentChunkSize + elementSize + continuationIndicatorSize >
+        (this.CARD_DATA_SIZE_LIMIT - this.CARD_SIZE_BUFFER);
+
+      if (currentChunk.length > 0 && (wouldExceedElementLimit || wouldExceedSizeLimit)) {
+        // Start a new chunk
+        chunks.push(currentChunk);
+        currentChunk = [];
+        currentChunkSize = 0;
+      }
+
+      currentChunk.push(element);
+      currentChunkSize += elementSize;
+    }
+
+    // Add the last chunk if not empty
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+
+    console.log(`[FeishuHandler] Split ${elements.length} elements into ${chunks.length} chunk(s)`);
+    chunks.forEach((chunk, i) => {
+      const chunkSize = JSON.stringify({ schema: '2.0', body: { elements: chunk } }).length;
+      console.log(`[FeishuHandler]   Chunk ${i + 1}: ${chunk.length} elements, ${chunkSize} bytes`);
+    });
+
+    // Add continuation indicators between chunks
+    if (chunks.length > 1) {
+      for (let i = 0; i < chunks.length; i++) {
+        const isFirst = i === 0;
+        const isLast = i === chunks.length - 1;
+
+        if (!isLast) {
+          // Add "continued in next message" indicator at the end
+          chunks[i].push({
+            tag: 'markdown',
+            content: '\n\n_➡️ Continued in next message..._',
+          });
+        }
+
+        if (!isFirst) {
+          // Add "continued from previous message" indicator at the start
+          chunks[i].unshift({
+            tag: 'markdown',
+            content: '_⬅️ Continued from previous message..._\n\n',
+          });
+        }
+      }
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Check if elements array needs to be split based on Feishu limits
+   * @param elements Array of elements to check
+   * @returns true if splitting is needed
+   */
+  private checkIfElementsNeedSplitting(elements: any[]): boolean {
+    // Check element count limit
+    if (elements.length > this.CARD_ELEMENT_LIMIT) {
+      console.log(`[FeishuHandler] Element count (${elements.length}) exceeds limit (${this.CARD_ELEMENT_LIMIT})`);
+      return true;
+    }
+
+    // Check data size limit
+    const cardData = {
+      schema: '2.0',
+      body: { elements },
+    };
+    const jsonSize = JSON.stringify(cardData).length;
+    const sizeLimit = this.CARD_DATA_SIZE_LIMIT - this.CARD_SIZE_BUFFER;
+
+    console.log(`[FeishuHandler] Card data size: ${jsonSize} bytes, limit: ${sizeLimit} bytes`);
+
+    // Use buffer for safety (2.9MB instead of 3MB)
+    if (jsonSize > sizeLimit) {
+      console.log(`[FeishuHandler] Data size (${jsonSize}) exceeds limit (${sizeLimit})`);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Create a continuation card message
+   * Used when elements need to be split across multiple cards
+   *
+   * @param openId User's open_id to send the message to
+   * @param elements Array of Feishu Card 2.0 elements
+   * @returns The new message ID, or null on error
+   */
+  private async createContinuationCard(openId: string, elements: any[]): Promise<string | null> {
+    try {
+      const result = await this.client.im.message.create({
+        params: { receive_id_type: 'open_id' },
+        data: {
+          receive_id: openId,
+          msg_type: 'interactive',
+          content: JSON.stringify({
+            schema: '2.0',
+            body: {
+              elements,
+            },
+          }),
+        },
+      });
+
+      return result.data?.message_id || null;
+    } catch (error: any) {
+      console.error('Failed to create continuation card:', error?.message || error);
+      return null;
+    }
+  }
+
+  /**
    * Update streaming message content
    * Automatically creates new messages if content exceeds Feishu's size limit
    *
@@ -834,19 +997,93 @@ Examples:
         this.messageChains.set(messageId, chain);
       }
 
-      // For now, just update the single message with all elements
-      // TODO: In the future, implement message chaining if elements become too large
+      // Split elements into chunks based on Feishu Card 2.0 limits
+      const chunks = this.splitElementsIntoChunks(elements);
+      console.log(`[FeishuHandler] Need ${chunks.length} card(s), currently have ${chain.length} card(s)`);
+
+      // Update the first message with the first chunk
       await this.client.im.message.patch({
-        path: { message_id: messageId },
+        path: { message_id: chain[0] },
         data: {
           content: JSON.stringify({
             schema: '2.0',
             body: {
-              elements,
+              elements: chunks[0],
             },
           }),
         },
       });
+
+      // Handle continuation chunks if needed
+      if (chunks.length > 1 && openId) {
+        const existingContinuationCards = chain.slice(1);
+        const neededContinuationCards = chunks.length - 1;
+
+        // Update existing continuation cards
+        for (let i = 0; i < Math.min(existingContinuationCards.length, neededContinuationCards); i++) {
+          const cardMessageId = existingContinuationCards[i];
+          const chunkIndex = i + 1;
+          console.log(`[FeishuHandler] Updating existing continuation card ${i + 1}/${neededContinuationCards}`);
+          await this.client.im.message.patch({
+            path: { message_id: cardMessageId },
+            data: {
+              content: JSON.stringify({
+                schema: '2.0',
+                body: {
+                  elements: chunks[chunkIndex],
+                },
+              }),
+            },
+          });
+        }
+
+        // Create new continuation cards if needed
+        if (neededContinuationCards > existingContinuationCards.length) {
+          console.log(`[FeishuHandler] Creating ${neededContinuationCards - existingContinuationCards.length} new continuation card(s)`);
+          for (let i = existingContinuationCards.length; i < neededContinuationCards; i++) {
+            const chunkIndex = i + 1;
+            const newMessageId = await this.createContinuationCard(openId, chunks[chunkIndex]);
+            if (newMessageId) {
+              chain.push(newMessageId);
+            }
+          }
+        }
+
+        // Delete excess continuation cards if we need fewer cards now
+        if (existingContinuationCards.length > neededContinuationCards) {
+          const cardsToDelete = existingContinuationCards.slice(neededContinuationCards);
+          console.log(`[FeishuHandler] Deleting ${cardsToDelete.length} excess continuation card(s)`);
+          for (const cardMessageId of cardsToDelete) {
+            try {
+              await this.client.im.message.delete({
+                path: { message_id: cardMessageId },
+              });
+            } catch (error: any) {
+              console.error(`Failed to delete continuation card ${cardMessageId}:`, error?.message || error);
+            }
+          }
+          // Update chain to remove deleted cards
+          chain.length = chunks.length;
+        }
+
+        this.messageChains.set(messageId, chain);
+      } else if (chunks.length === 1 && chain.length > 1) {
+        // No longer need continuation cards, delete all of them
+        const cardsToDelete = chain.slice(1);
+        console.log(`[FeishuHandler] No longer need continuation cards, deleting ${cardsToDelete.length} card(s)`);
+        for (const cardMessageId of cardsToDelete) {
+          try {
+            await this.client.im.message.delete({
+              path: { message_id: cardMessageId },
+            });
+          } catch (error: any) {
+            console.error(`Failed to delete continuation card ${cardMessageId}:`, error?.message || error);
+          }
+        }
+        // Update chain to only keep the first message
+        chain.length = 1;
+        this.messageChains.set(messageId, chain);
+      }
 
       return true;
     } catch (error: any) {
@@ -892,19 +1129,90 @@ Examples:
         },
       ];
 
-      // Update the message with final content
-      // TODO: In the future, implement message chaining if elements become too large
+      // Split elements into chunks based on Feishu Card 2.0 limits
+      const chunks = this.splitElementsIntoChunks(finalElements);
+      console.log(`[FeishuHandler] Finalizing: need ${chunks.length} card(s), currently have ${chain.length} card(s)`);
+
+      // Update the first message with the first chunk
       await this.client.im.message.patch({
-        path: { message_id: messageId },
+        path: { message_id: chain[0] },
         data: {
           content: JSON.stringify({
             schema: '2.0',
             body: {
-              elements: finalElements,
+              elements: chunks[0],
             },
           }),
         },
       });
+
+      // Handle continuation chunks if needed
+      if (chunks.length > 1 && openId) {
+        const existingContinuationCards = chain.slice(1);
+        const neededContinuationCards = chunks.length - 1;
+
+        // Update existing continuation cards
+        for (let i = 0; i < Math.min(existingContinuationCards.length, neededContinuationCards); i++) {
+          const cardMessageId = existingContinuationCards[i];
+          const chunkIndex = i + 1;
+          console.log(`[FeishuHandler] Finalize: Updating existing continuation card ${i + 1}/${neededContinuationCards}`);
+          await this.client.im.message.patch({
+            path: { message_id: cardMessageId },
+            data: {
+              content: JSON.stringify({
+                schema: '2.0',
+                body: {
+                  elements: chunks[chunkIndex],
+                },
+              }),
+            },
+          });
+        }
+
+        // Create new continuation cards if needed
+        if (neededContinuationCards > existingContinuationCards.length) {
+          console.log(`[FeishuHandler] Finalize: Creating ${neededContinuationCards - existingContinuationCards.length} new continuation card(s)`);
+          for (let i = existingContinuationCards.length; i < neededContinuationCards; i++) {
+            const chunkIndex = i + 1;
+            const newMessageId = await this.createContinuationCard(openId, chunks[chunkIndex]);
+            if (newMessageId) {
+              chain.push(newMessageId);
+            }
+          }
+        }
+
+        // Delete excess continuation cards if we need fewer cards now
+        if (existingContinuationCards.length > neededContinuationCards) {
+          const cardsToDelete = existingContinuationCards.slice(neededContinuationCards);
+          console.log(`[FeishuHandler] Finalize: Deleting ${cardsToDelete.length} excess continuation card(s)`);
+          for (const cardMessageId of cardsToDelete) {
+            try {
+              await this.client.im.message.delete({
+                path: { message_id: cardMessageId },
+              });
+            } catch (error: any) {
+              console.error(`Failed to delete continuation card ${cardMessageId}:`, error?.message || error);
+            }
+          }
+          // Update chain to remove deleted cards
+          chain.length = chunks.length;
+        }
+      } else if (chunks.length === 1 && chain.length > 1) {
+        // No longer need continuation cards, delete all of them
+        const cardsToDelete = chain.slice(1);
+        console.log(`[FeishuHandler] Finalize: No longer need continuation cards, deleting ${cardsToDelete.length} card(s)`);
+        for (const cardMessageId of cardsToDelete) {
+          try {
+            await this.client.im.message.delete({
+              path: { message_id: cardMessageId },
+            });
+          } catch (error: any) {
+            console.error(`Failed to delete continuation card ${cardMessageId}:`, error?.message || error);
+          }
+        }
+        // Update chain to only keep the first message
+        chain.length = 1;
+      }
 
       // Clean up message chain tracking
       this.messageChains.delete(messageId);

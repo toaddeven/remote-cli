@@ -539,4 +539,382 @@ describe('FeishuLongConnHandler', () => {
       expect(result).toBe(mockBindingManager);
     });
   });
+
+  describe('splitElementsIntoChunks', () => {
+    it('should return single chunk for small number of elements', () => {
+      const elements = [
+        { tag: 'markdown', content: 'Hello' },
+        { tag: 'markdown', content: 'World' },
+      ];
+
+      const chunks = (handler as any).splitElementsIntoChunks(elements);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toEqual(elements);
+    });
+
+    it('should split when element count exceeds CARD_ELEMENT_LIMIT (100)', () => {
+      // Create 150 elements to exceed the new conservative limit
+      const elements = Array.from({ length: 150 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      const chunks = (handler as any).splitElementsIntoChunks(elements);
+
+      // Should be split into multiple chunks
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk should have at most 102 elements (100 elements + 2 indicators max)
+      chunks.forEach((chunk: any[]) => {
+        expect(chunk.length).toBeLessThanOrEqual(102);
+      });
+
+      // Count original elements (excluding continuation indicators)
+      const totalOriginalElements = chunks.reduce((sum: number, chunk: any[]) => {
+        const originalElements = chunk.filter((el: any) =>
+          !el.content?.includes('Continued from previous') &&
+          !el.content?.includes('Continued in next message')
+        );
+        return sum + originalElements.length;
+      }, 0);
+      expect(totalOriginalElements).toBe(150);
+    });
+
+    it('should split when JSON size exceeds CARD_DATA_SIZE_LIMIT', () => {
+      // Create elements with large content
+      // Each element ~500KB, to easily exceed the 2.9MB limit
+      const largeContent = 'x'.repeat(500000);
+      const elements = Array.from({ length: 10 }, (_, i) => ({
+        tag: 'markdown',
+        content: largeContent,
+      }));
+
+      const chunks = (handler as any).splitElementsIntoChunks(elements);
+
+      // Should be split due to size limit
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Each chunk's JSON should not exceed limit (with buffer)
+      chunks.forEach((chunk: any[]) => {
+        const cardData = {
+          schema: '2.0',
+          body: { elements: chunk },
+        };
+        const jsonSize = JSON.stringify(cardData).length;
+        // Should be less than 2.9MB (buffer for safety)
+        expect(jsonSize).toBeLessThan(2900000);
+      });
+    });
+
+    it('should handle mix of different element types', () => {
+      const elements = [
+        { tag: 'markdown', content: 'Text 1' },
+        { tag: 'hr' },
+        { tag: 'markdown', content: 'Text 2' },
+        { tag: 'hr' },
+      ];
+
+      const chunks = (handler as any).splitElementsIntoChunks(elements);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toEqual(elements);
+    });
+
+    it('should handle empty elements array', () => {
+      const elements: any[] = [];
+
+      const chunks = (handler as any).splitElementsIntoChunks(elements);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toEqual([]);
+    });
+
+    it('should add continuation indicators between chunks', () => {
+      // Create 250 elements to force splitting
+      const elements = Array.from({ length: 250 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      const chunks = (handler as any).splitElementsIntoChunks(elements);
+
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // First chunk should have continuation indicator at the end
+      const firstChunk = chunks[0];
+      const lastElement = firstChunk[firstChunk.length - 1];
+      expect(lastElement.tag).toBe('markdown');
+      expect(lastElement.content).toContain('Continued in next message');
+
+      // Middle chunks should have indicators at both ends
+      if (chunks.length > 2) {
+        const middleChunk = chunks[1];
+        const firstElement = middleChunk[0];
+        const lastElementMiddle = middleChunk[middleChunk.length - 1];
+        expect(firstElement.tag).toBe('markdown');
+        expect(firstElement.content).toContain('Continued from previous');
+        expect(lastElementMiddle.tag).toBe('markdown');
+        expect(lastElementMiddle.content).toContain('Continued in next message');
+      }
+
+      // Last chunk should only have indicator at the start
+      const lastChunk = chunks[chunks.length - 1];
+      const firstElementLast = lastChunk[0];
+      expect(firstElementLast.tag).toBe('markdown');
+      expect(firstElementLast.content).toContain('Continued from previous');
+    });
+  });
+
+  describe('createContinuationCard', () => {
+    it('should create a new card message with continuation elements', async () => {
+      const openId = 'test_open_id';
+      const elements = [
+        { tag: 'markdown', content: 'Continuation content' },
+      ];
+
+      mockClient.im.message.create.mockResolvedValue({
+        data: { message_id: 'msg_new_123' },
+      });
+
+      const messageId = await (handler as any).createContinuationCard(openId, elements);
+
+      expect(messageId).toBe('msg_new_123');
+      expect(mockClient.im.message.create).toHaveBeenCalledWith({
+        params: { receive_id_type: 'open_id' },
+        data: {
+          receive_id: openId,
+          msg_type: 'interactive',
+          content: expect.stringContaining('"schema":"2.0"'),
+        },
+      });
+
+      // Verify the content includes the elements
+      const createCall = mockClient.im.message.create.mock.calls[0][0];
+      const content = JSON.parse(createCall.data.content);
+      expect(content.body.elements).toEqual(elements);
+    });
+
+    it('should return null on error', async () => {
+      const openId = 'test_open_id';
+      const elements = [{ tag: 'markdown', content: 'Test' }];
+
+      mockClient.im.message.create.mockRejectedValue(new Error('Network error'));
+
+      const messageId = await (handler as any).createContinuationCard(openId, elements);
+
+      expect(messageId).toBeNull();
+    });
+  });
+
+  describe('updateStreamingMessage with chunking', () => {
+    it('should create continuation cards when elements exceed limit', async () => {
+      const messageId = 'msg_original';
+      const openId = 'test_open_id';
+
+      // Create 250 elements to exceed limit
+      const elements = Array.from({ length: 250 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      mockClient.im.message.patch.mockResolvedValue({ data: {} });
+      mockClient.im.message.create.mockResolvedValue({
+        data: { message_id: 'msg_continuation_1' },
+      });
+
+      const result = await handler.updateStreamingMessage(messageId, elements, openId);
+
+      expect(result).toBe(true);
+
+      // Should update the original message
+      expect(mockClient.im.message.patch).toHaveBeenCalled();
+
+      // Should create at least one continuation card
+      expect(mockClient.im.message.create).toHaveBeenCalled();
+    });
+
+    it('should not create continuation cards for small element arrays', async () => {
+      const messageId = 'msg_small';
+      const openId = 'test_open_id';
+      const elements = [
+        { tag: 'markdown', content: 'Small content' },
+      ];
+
+      mockClient.im.message.patch.mockResolvedValue({ data: {} });
+
+      const result = await handler.updateStreamingMessage(messageId, elements, openId);
+
+      expect(result).toBe(true);
+      expect(mockClient.im.message.patch).toHaveBeenCalled();
+      expect(mockClient.im.message.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('finalizeStreamingMessage with chunking', () => {
+    it('should create continuation cards when finalized elements exceed limit', async () => {
+      const messageId = 'msg_finalize';
+      const openId = 'test_open_id';
+
+      // Create 250 elements to exceed limit
+      const elements = Array.from({ length: 250 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      mockClient.im.message.patch.mockResolvedValue({ data: {} });
+      mockClient.im.message.create.mockResolvedValue({
+        data: { message_id: 'msg_continuation_final' },
+      });
+
+      const result = await handler.finalizeStreamingMessage(messageId, elements, 'abc123', openId);
+
+      expect(result).toBe(true);
+
+      // Should update the original message
+      expect(mockClient.im.message.patch).toHaveBeenCalled();
+
+      // Should create continuation cards if needed
+      // Note: The completion note adds one more element, so it should still trigger chunking
+      expect(mockClient.im.message.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('Continuation card reuse and cleanup', () => {
+    it('should reuse existing continuation cards on update', async () => {
+      const messageId = 'msg_reuse';
+      const openId = 'test_open_id';
+
+      // First update: create 2 cards (original + 1 continuation)
+      const elements1 = Array.from({ length: 150 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      mockClient.im.message.patch.mockResolvedValue({ data: {} });
+      mockClient.im.message.create.mockResolvedValue({
+        data: { message_id: 'msg_continuation_1' },
+      });
+
+      await handler.updateStreamingMessage(messageId, elements1, openId);
+
+      const createCallCount1 = mockClient.im.message.create.mock.calls.length;
+      const patchCallCount1 = mockClient.im.message.patch.mock.calls.length;
+
+      // Second update: still needs 2 cards, should reuse the continuation card
+      const elements2 = Array.from({ length: 160 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Updated ${i}`,
+      }));
+
+      await handler.updateStreamingMessage(messageId, elements2, openId);
+
+      const createCallCount2 = mockClient.im.message.create.mock.calls.length;
+      const patchCallCount2 = mockClient.im.message.patch.mock.calls.length;
+
+      // Should NOT create new cards (reuse existing)
+      expect(createCallCount2).toBe(createCallCount1);
+
+      // Should patch both original and continuation card (2 more patches)
+      expect(patchCallCount2).toBeGreaterThan(patchCallCount1);
+    });
+
+    it('should create additional continuation cards when needed', async () => {
+      const messageId = 'msg_expand';
+      const openId = 'test_open_id';
+
+      // First update: 150 elements -> 2 cards
+      const elements1 = Array.from({ length: 150 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      mockClient.im.message.patch.mockResolvedValue({ data: {} });
+      let continuationId = 1;
+      mockClient.im.message.create.mockImplementation(() =>
+        Promise.resolve({ data: { message_id: `msg_continuation_${continuationId++}` } })
+      );
+
+      await handler.updateStreamingMessage(messageId, elements1, openId);
+      const createCallCount1 = mockClient.im.message.create.mock.calls.length;
+
+      // Second update: 250 elements -> needs 3 cards
+      const elements2 = Array.from({ length: 250 }, (_, i) => ({
+        tag: 'markdown',
+        content: `More ${i}`,
+      }));
+
+      await handler.updateStreamingMessage(messageId, elements2, openId);
+      const createCallCount2 = mockClient.im.message.create.mock.calls.length;
+
+      // Should create 1 more card (createCallCount2 > createCallCount1)
+      expect(createCallCount2).toBeGreaterThan(createCallCount1);
+    });
+
+    it('should delete excess continuation cards when content shrinks', async () => {
+      const messageId = 'msg_shrink';
+      const openId = 'test_open_id';
+
+      // First update: 250 elements -> 3 cards
+      const elements1 = Array.from({ length: 250 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      mockClient.im.message.patch.mockResolvedValue({ data: {} });
+      let continuationId = 1;
+      mockClient.im.message.create.mockImplementation(() =>
+        Promise.resolve({ data: { message_id: `msg_continuation_${continuationId++}` } })
+      );
+      mockClient.im.message.delete.mockResolvedValue({ data: {} });
+
+      await handler.updateStreamingMessage(messageId, elements1, openId);
+
+      // Second update: 80 elements -> only 1 card needed
+      const elements2 = Array.from({ length: 80 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Smaller ${i}`,
+      }));
+
+      await handler.updateStreamingMessage(messageId, elements2, openId);
+
+      // Should have called delete for the excess continuation cards
+      expect(mockClient.im.message.delete).toHaveBeenCalled();
+      const deleteCallCount = mockClient.im.message.delete.mock.calls.length;
+      expect(deleteCallCount).toBeGreaterThan(0);
+    });
+
+    it('should delete all continuation cards when no longer needed', async () => {
+      const messageId = 'msg_cleanup';
+      const openId = 'test_open_id';
+
+      // First update: 200 elements -> 2-3 cards
+      const elements1 = Array.from({ length: 200 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Element ${i}`,
+      }));
+
+      mockClient.im.message.patch.mockResolvedValue({ data: {} });
+      mockClient.im.message.create.mockResolvedValue({
+        data: { message_id: 'msg_continuation_temp' },
+      });
+      mockClient.im.message.delete.mockResolvedValue({ data: {} });
+
+      await handler.updateStreamingMessage(messageId, elements1, openId);
+
+      // Clear mock to track new calls
+      mockClient.im.message.delete.mockClear();
+
+      // Second update: 50 elements -> only 1 card needed
+      const elements2 = Array.from({ length: 50 }, (_, i) => ({
+        tag: 'markdown',
+        content: `Small ${i}`,
+      }));
+
+      await handler.updateStreamingMessage(messageId, elements2, openId);
+
+      // Should delete all continuation cards
+      expect(mockClient.im.message.delete).toHaveBeenCalled();
+    });
+  });
 });
