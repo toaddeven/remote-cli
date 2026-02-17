@@ -101,11 +101,29 @@ describe('ClaudePersistentExecutor', () => {
   });
 
   describe('process startup', () => {
-    it('should verify directory exists before starting process', () => {
-      // This test just verifies that the directory validation code path exists
-      // Full integration testing is complex due to async queue processing
-      // The actual functionality is covered by ClaudeExecutor tests
-      expect(true).toBe(true);
+    it('should return error if working directory does not exist', async () => {
+      // Set working directory to a safe path
+      await executor.setWorkingDirectory('~/test-project');
+
+      // Mock fs.existsSync to return false for the working directory check
+      // but true for session file checks
+      let callCount = 0;
+      mockFs.existsSync.mockImplementation((path: string) => {
+        callCount++;
+        // First call is for session file check, return false (no session file)
+        if (callCount === 1) {
+          return false;
+        }
+        // Second call is for working directory validation in startProcess, return false
+        return false;
+      });
+
+      // Execute a command - should fail gracefully without crashing
+      const result = await executor.execute('test command');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Working directory does not exist');
+      expect(mockSpawn).not.toHaveBeenCalled();
     });
   });
 

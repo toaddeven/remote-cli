@@ -924,14 +924,34 @@ export class ClaudePersistentExecutor extends EventEmitter {
   /**
    * Process the command queue
    */
-  private processQueue(): void {
+  private async processQueue(): Promise<void> {
     if (this.isProcessing || this.commandQueue.length === 0) {
       return;
     }
 
     // Ensure process is running
     if (!this.claudeProcess) {
-      this.startProcess();
+      try {
+        await this.startProcess();
+      } catch (error) {
+        // Failed to start process (e.g., working directory doesn't exist)
+        // Return error result to caller without crashing the process
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('[ClaudePersistent] Failed to start process:', errorMessage);
+
+        // Get the current command from queue and return error
+        const command = this.commandQueue.shift();
+        if (command) {
+          command.resolve({
+            success: false,
+            error: errorMessage,
+          });
+        }
+
+        // Reset state and continue processing queue
+        this.isStarting = false;
+        this.processQueue();
+      }
       return;
     }
 
