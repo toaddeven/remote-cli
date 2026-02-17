@@ -320,6 +320,11 @@ describe('ConfigManager', () => {
           url: 'wss://imported-server.com',
           reconnectInterval: 3000,
           heartbeatInterval: 20000
+        },
+        worktree: {
+          enabled: true,
+          autoCleanupDays: 0,
+          baseBranch: 'main'
         }
       };
 

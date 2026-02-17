@@ -14,7 +14,12 @@ vi.mock('fs', () => ({
     existsSync: vi.fn(() => false),
     readFileSync: vi.fn(),
     writeFileSync: vi.fn(),
+    unlinkSync: vi.fn(),
   },
+  existsSync: vi.fn(() => false),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 import { spawn } from 'child_process';
@@ -64,27 +69,27 @@ describe('ClaudeExecutor', () => {
   });
 
   describe('working directory management', () => {
-    it('should set working directory if path is safe', () => {
+    it('should set working directory if path is safe', async () => {
       const safePath = '~/test-project';
-      executor.setWorkingDirectory(safePath);
+      await executor.setWorkingDirectory(safePath);
       const cwd = executor.getCurrentWorkingDirectory();
       expect(cwd).toContain('test-project');
     });
 
-    it('should throw error if path is not safe', () => {
+    it('should throw error if path is not safe', async () => {
       const unsafePath = '/etc/passwd';
-      expect(() => executor.setWorkingDirectory(unsafePath)).toThrow();
+      await expect(executor.setWorkingDirectory(unsafePath)).rejects.toThrow();
     });
 
-    it('should normalize tilde paths', () => {
-      executor.setWorkingDirectory('~/test-project');
+    it('should normalize tilde paths', async () => {
+      await executor.setWorkingDirectory('~/test-project');
       const cwd = executor.getCurrentWorkingDirectory();
       expect(cwd).not.toContain('~');
       expect(cwd).toContain('test-project');
     });
 
-    it('should handle relative paths', () => {
-      executor.setWorkingDirectory('./work');
+    it('should handle relative paths', async () => {
+      await executor.setWorkingDirectory('./work');
       const cwd = executor.getCurrentWorkingDirectory();
       expect(cwd).toContain('work');
     });
@@ -151,7 +156,7 @@ describe('ClaudeExecutor', () => {
     it('should not execute if working directory is not safe', async () => {
       // Force set unsafe directory (bypass validation for test)
       try {
-        executor.setWorkingDirectory('/etc');
+        await executor.setWorkingDirectory('/etc');
       } catch {
         // Expected to throw
       }

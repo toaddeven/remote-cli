@@ -27,6 +27,18 @@ export interface ServerConfig {
 }
 
 /**
+ * Worktree configuration
+ */
+export interface WorktreeConfig {
+  /** Enable/disable worktree integration (default: true) */
+  enabled: boolean;
+  /** Auto-cleanup threshold in days (0 = never, default: 0) */
+  autoCleanupDays: number;
+  /** Base branch for worktrees (default: 'main') */
+  baseBranch: string;
+}
+
+/**
  * Complete configuration
  */
 export interface Config {
@@ -35,6 +47,7 @@ export interface Config {
   serverUrl?: string;
   security: SecurityConfig;
   server: ServerConfig;
+  worktree: WorktreeConfig;
   service?: {
     running?: boolean;
     startedAt?: number;
@@ -56,5 +69,10 @@ export const DEFAULT_CONFIG: Config = {
     url: 'wss://localhost:3000',
     reconnectInterval: 5000,
     heartbeatInterval: 30000
+  },
+  worktree: {
+    enabled: true,
+    autoCleanupDays: 0,
+    baseBranch: 'main'
   }
 };

@@ -154,8 +154,8 @@ export class MessageHandler {
         return;
       }
 
-      // Set working directory
-      this.executor.setWorkingDirectory(workingDirectory);
+      // Set working directory (now async for worktree support)
+      await this.executor.setWorkingDirectory(workingDirectory);
     }
 
     try {
@@ -283,6 +283,12 @@ export class MessageHandler {
 - /c or /continue - Continue previous conversation
 - /review - Review changes (supports remote interaction)
 
+🌳 Worktree commands:
+- /worktree list - List all worktrees
+- /worktree cleanup [days] - Remove stale worktrees (default: 7 days)
+- /worktree remove <session-id> - Remove specific worktree
+- /main or /reset - Return to main working directory
+
 💡 Interactive commands like /review will prompt you for input via Feishu when needed.
 
 You can also use natural language commands to control Claude Code CLI.`,
@@ -313,7 +319,7 @@ You can also use natural language commands to control Claude Code CLI.`,
 
       const targetDir = parts.slice(1).join(' ');
       try {
-        this.executor.setWorkingDirectory(targetDir);
+        await this.executor.setWorkingDirectory(targetDir);
         const newCwd = this.executor.getCurrentWorkingDirectory();
         this.sendResponse(messageId, {
           success: true,
@@ -331,7 +337,187 @@ You can also use natural language commands to control Claude Code CLI.`,
       return true;
     }
 
+    // /worktree list command
+    if (trimmed === '/worktree list') {
+      return await this.handleWorktreeList(messageId);
+    }
+
+    // /worktree cleanup command
+    if (trimmed.startsWith('/worktree cleanup')) {
+      const parts = trimmed.split(/\s+/);
+      const days = parts[2] ? parseInt(parts[2]) : 7;
+      return await this.handleWorktreeCleanup(messageId, days);
+    }
+
+    // /worktree remove command
+    if (trimmed.startsWith('/worktree remove')) {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length < 3) {
+        this.sendResponse(messageId, {
+          success: false,
+          error: 'Usage: /worktree remove <session-id>',
+        });
+        return true;
+      }
+      const sessionId = parts[2];
+      return await this.handleWorktreeRemove(messageId, sessionId);
+    }
+
+    // /main or /reset command - return to main working directory
+    if (trimmed === '/main' || trimmed === '/reset') {
+      return await this.handleReturnToMain(messageId);
+    }
+
     return false;
+  }
+
+  /**
+   * Handle /worktree list command
+   */
+  private async handleWorktreeList(messageId: string): Promise<boolean> {
+    try {
+      const cwd = this.executor.getCurrentWorkingDirectory();
+      const worktreeManager = this.executor.getWorktreeManager();
+
+      // Get main repo path (remove worktree suffix if present)
+      const mainRepoPath = cwd.replace(/\.worktrees[/\\]session-[a-f0-9]{8}$/, '');
+
+      const worktrees = await worktreeManager.listWorktrees(mainRepoPath);
+
+      if (worktrees.length === 0) {
+        this.sendResponse(messageId, {
+          success: true,
+          output: '📂 No worktrees found',
+        });
+        return true;
+      }
+
+      let output = `📂 Worktrees (${worktrees.length}):\n\n`;
+      for (const wt of worktrees) {
+        if (wt.isMain) {
+          output += `• [MAIN] ${wt.branch}\n`;
+          output += `  Path: ${wt.path}\n`;
+          output += `  Commit: ${wt.commit.slice(0, 7)}\n\n`;
+        } else if (wt.sessionId) {
+          output += `• Session: ${wt.sessionId}\n`;
+          output += `  Branch: ${wt.branch}\n`;
+          output += `  Path: ${wt.path}\n`;
+          output += `  Commit: ${wt.commit.slice(0, 7)}\n\n`;
+        }
+      }
+
+      this.sendResponse(messageId, { success: true, output });
+      return true;
+    } catch (error) {
+      this.sendResponse(messageId, {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to list worktrees',
+      });
+      return true;
+    }
+  }
+
+  /**
+   * Handle /worktree cleanup command
+   */
+  private async handleWorktreeCleanup(messageId: string, days: number): Promise<boolean> {
+    try {
+      const cwd = this.executor.getCurrentWorkingDirectory();
+      const worktreeManager = this.executor.getWorktreeManager();
+
+      // Get main repo path
+      const mainRepoPath = cwd.replace(/\.worktrees[/\\]session-[a-f0-9]{8}$/, '');
+
+      const count = await worktreeManager.pruneStaleWorktrees(mainRepoPath, days);
+
+      this.sendResponse(messageId, {
+        success: true,
+        output: `🗑️ Cleaned up ${count} stale worktree(s) older than ${days} days`,
+      });
+      return true;
+    } catch (error) {
+      this.sendResponse(messageId, {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to cleanup worktrees',
+      });
+      return true;
+    }
+  }
+
+  /**
+   * Handle /worktree remove command
+   */
+  private async handleWorktreeRemove(messageId: string, sessionId: string): Promise<boolean> {
+    try {
+      const cwd = this.executor.getCurrentWorkingDirectory();
+      const worktreeManager = this.executor.getWorktreeManager();
+
+      // Get main repo path
+      const mainRepoPath = cwd.replace(/\.worktrees[/\\]session-[a-f0-9]{8}$/, '');
+
+      const worktreePath = worktreeManager.getWorktreePath(mainRepoPath, sessionId);
+
+      if (!worktreePath) {
+        this.sendResponse(messageId, {
+          success: false,
+          error: `Worktree not found for session: ${sessionId}`,
+        });
+        return true;
+      }
+
+      await worktreeManager.removeWorktree(worktreePath, mainRepoPath);
+
+      this.sendResponse(messageId, {
+        success: true,
+        output: `✅ Removed worktree for session ${sessionId}`,
+      });
+      return true;
+    } catch (error) {
+      this.sendResponse(messageId, {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to remove worktree',
+      });
+      return true;
+    }
+  }
+
+  /**
+   * Handle /main or /reset command - return to main working directory
+   */
+  private async handleReturnToMain(messageId: string): Promise<boolean> {
+    try {
+      const cwd = this.executor.getCurrentWorkingDirectory();
+
+      // Check if currently in a worktree
+      const match = cwd.match(/^(.+)\.worktrees[/\\]session-[a-f0-9]{8}$/);
+      if (!match) {
+        this.sendResponse(messageId, {
+          success: true,
+          output: '✅ Already in main working directory',
+        });
+        return true;
+      }
+
+      const mainRepoPath = match[1];
+
+      // Stop current session
+      this.executor.resetContext();
+
+      // Switch to main repo
+      await this.executor.setWorkingDirectory(mainRepoPath);
+
+      this.sendResponse(messageId, {
+        success: true,
+        output: `✅ Switched to main working directory: ${mainRepoPath}`,
+      });
+      return true;
+    } catch (error) {
+      this.sendResponse(messageId, {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to return to main directory',
+      });
+      return true;
+    }
   }
 
   /**

@@ -39,6 +39,8 @@ export class ConfigManager {
     try {
       const content = await fs.readFile(configFile, 'utf-8');
       config = JSON.parse(content);
+      // Merge with defaults for any missing fields (e.g. new worktree config)
+      config = ConfigManager.mergeWithDefaults(config);
       // Validate config structure
       if (!ConfigManager.isValidConfig(config)) {
         throw new Error('Invalid config structure');
@@ -50,6 +52,30 @@ export class ConfigManager {
     }
 
     return new ConfigManager(config, configDir, configFile);
+  }
+
+  /**
+   * Merge user config with defaults (for backward compatibility)
+   * @param config User configuration
+   * @returns Merged configuration
+   */
+  private static mergeWithDefaults(config: any): Config {
+    return {
+      ...DEFAULT_CONFIG,
+      ...config,
+      security: {
+        ...DEFAULT_CONFIG.security,
+        ...(config.security || {}),
+      },
+      server: {
+        ...DEFAULT_CONFIG.server,
+        ...(config.server || {}),
+      },
+      worktree: {
+        ...DEFAULT_CONFIG.worktree,
+        ...(config.worktree || {}),
+      },
+    };
   }
 
   /**
@@ -70,7 +96,12 @@ export class ConfigManager {
       typeof config.server === 'object' &&
       typeof config.server.url === 'string' &&
       typeof config.server.reconnectInterval === 'number' &&
-      typeof config.server.heartbeatInterval === 'number'
+      typeof config.server.heartbeatInterval === 'number' &&
+      config.worktree &&
+      typeof config.worktree === 'object' &&
+      typeof config.worktree.enabled === 'boolean' &&
+      typeof config.worktree.autoCleanupDays === 'number' &&
+      typeof config.worktree.baseBranch === 'string'
     );
   }
 

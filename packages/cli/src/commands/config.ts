@@ -203,6 +203,50 @@ async function handleSetConfig(
     }
   }
 
+  // Validate worktree configuration keys
+  if (key === 'worktree.enabled') {
+    if (value !== 'true' && value !== 'false') {
+      return {
+        success: false,
+        error: 'worktree.enabled must be "true" or "false"',
+      };
+    }
+    await config.set(key, value === 'true');
+    return {
+      success: true,
+      value: value === 'true',
+    };
+  }
+
+  if (key === 'worktree.autoCleanupDays') {
+    const days = parseInt(value, 10);
+    if (isNaN(days) || days < 0) {
+      return {
+        success: false,
+        error: 'worktree.autoCleanupDays must be a non-negative number',
+      };
+    }
+    await config.set(key, days);
+    return {
+      success: true,
+      value: days,
+    };
+  }
+
+  if (key === 'worktree.baseBranch') {
+    if (!value || value.trim() === '') {
+      return {
+        success: false,
+        error: 'worktree.baseBranch cannot be empty',
+      };
+    }
+    await config.set(key, value);
+    return {
+      success: true,
+      value,
+    };
+  }
+
   await config.set(key, value);
 
   return {

@@ -35,8 +35,9 @@ describe('Integration: Message Flow', () => {
     executor = {
       execute: vi.fn(),
       getCurrentWorkingDirectory: vi.fn(() => '~/projects'),
-      setWorkingDirectory: vi.fn(),
+      setWorkingDirectory: vi.fn().mockResolvedValue(undefined),
       isExecuting: vi.fn(() => false),
+      abort: vi.fn().mockResolvedValue(true),
     };
     (ClaudeExecutor as any).mockImplementation(() => executor);
 
@@ -274,9 +275,17 @@ describe('Integration: Message Flow', () => {
 
   describe('Concurrent command handling', () => {
     it('should reject concurrent commands (one at a time)', async () => {
-      // First command takes time
+      // Track execution state
+      let isExecuting = false;
+
+      // Mock isExecuting to track state
+      executor.isExecuting.mockImplementation(() => isExecuting);
+
+      // First command takes time and tracks execution state
       executor.execute.mockImplementationOnce(async () => {
+        isExecuting = true;
         await new Promise((resolve) => setTimeout(resolve, 100));
+        isExecuting = false;
         return { success: true, output: 'Done' };
       });
 
@@ -299,7 +308,10 @@ describe('Integration: Message Flow', () => {
       // Start first command
       const promise1 = handler.handleMessage(message1);
 
-      // Try to start second command immediately
+      // Wait a bit for first command to start executing
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Try to start second command while first is running
       await handler.handleMessage(message2);
 
       // Second command should be rejected
