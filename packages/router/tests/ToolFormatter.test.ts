@@ -133,10 +133,13 @@ describe('ToolFormatter', () => {
 
       expect(elements).toHaveLength(2);
       expect(elements[0]).toEqual({ tag: 'hr' });
-      expect(elements[1].tag).toBe('markdown');
-      expect(elements[1].content).toContain('TOOL USE');
-      expect(elements[1].content).toContain('Read');
-      expect(elements[1].content).toContain('tool_abc'); // Truncated ID (8 chars)
+      // Second element is now a collapsible_panel
+      expect(elements[1].tag).toBe('collapsible_panel');
+      expect(elements[1].header.title.content).toContain('TOOL USE');
+      expect(elements[1].header.title.content).toContain('Read');
+      expect(elements[1].header.title.content).toContain('tool_abc'); // Truncated ID (8 chars)
+      // Content should be in the panel's elements
+      expect(elements[1].elements[0].content).toContain('File:');
     });
 
     it('should include emoji in tool use element', () => {
@@ -147,7 +150,8 @@ describe('ToolFormatter', () => {
       };
 
       const elements = createToolUseElement(toolUse);
-      expect(elements[1].content).toContain('⚡'); // Bash emoji
+      // Emoji should be in the header title
+      expect(elements[1].header.title.content).toContain('⚡'); // Bash emoji
     });
   });
 

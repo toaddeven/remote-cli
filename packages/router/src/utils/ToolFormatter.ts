@@ -276,25 +276,47 @@ export function createMarkdownElement(content: string): FeishuCardElement {
 }
 
 /**
- * Create a Feishu Card 2.0 tool use element
+ * Create a Feishu Card 2.0 tool use element with collapsible panel
  */
 export function createToolUseElement(toolInfo: ToolUseInfo): FeishuCardElement[] {
   const { name, input, id } = toolInfo;
   const emoji = getToolEmoji(name);
   const context = extractToolContext(name, input);
 
-  // Build markdown content
-  let content = `<text_tag color='blue'>${emoji} TOOL USE</text_tag> · **${name}**`;
-
+  // Build header title
+  let headerTitle = `<text_tag color='blue'>${emoji} TOOL USE</text_tag> · **${name}**`;
   if (id) {
-    content += ` · \`${id.slice(0, 8)}\``;
+    headerTitle += ` · \`${id.slice(0, 8)}\``;
   }
 
-  content += `\n\n${context}`;
+  // Create collapsible panel with tool details inside
+  const collapsiblePanel: FeishuCardElement = {
+    tag: 'collapsible_panel',
+    expanded: false,
+    header: {
+      title: {
+        tag: 'markdown',
+        content: headerTitle,
+      },
+      vertical_align: 'center',
+      icon: {
+        tag: 'standard_icon',
+        token: 'down-small-ccm_outlined',
+        size: '14px 14px',
+      },
+      icon_position: 'right',
+      icon_expanded_angle: -180,
+    },
+    vertical_spacing: '8px',
+    padding: '4px 8px',
+    elements: [
+      createMarkdownElement(context),
+    ],
+  };
 
   return [
     createDividerElement(),
-    createMarkdownElement(content),
+    collapsiblePanel,
   ];
 }
 
