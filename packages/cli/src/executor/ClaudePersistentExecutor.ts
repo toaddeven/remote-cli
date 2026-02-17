@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import { claudeCodeHooks } from '../hooks/ClaudeCodeHooks';
 import { formatToolUseMessage, formatToolResultMessage, createResponseSeparator } from '../utils/FeishuMessageFormatter';
+import { StructuredContent, ContentBlockUnion, ToolUseInfo, ToolResultInfo } from '../types';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -89,8 +90,14 @@ interface ClaudeOutputMessage {
  * Persistent Claude Executor options
  */
 export interface PersistentClaudeOptions {
-  /** Stream output callback */
+  /** Stream output callback (for backward compatibility) */
   onStream?: (chunk: string) => void;
+  /** Structured content callback (for rich formatting) */
+  onStructuredContent?: (content: StructuredContent) => void;
+  /** Tool use callback (for rich formatting) */
+  onToolUse?: (toolUse: ToolUseInfo) => void;
+  /** Tool result callback (for rich formatting) */
+  onToolResult?: (toolResult: ToolResultInfo) => void;
   /** Execution timeout (milliseconds), default 300000 (5 minutes) */
   timeout?: number;
 }
@@ -157,6 +164,8 @@ export class ClaudePersistentExecutor extends EventEmitter {
   // Output handling
   private currentOutputBuffer: string[] = [];
   private currentStreamCallback?: (chunk: string) => void;
+  private currentToolUseCallback?: (toolUse: ToolUseInfo) => void;
+  private currentToolResultCallback?: (toolResult: ToolResultInfo) => void;
   private currentCommandResolve?: (result: PersistentClaudeResult) => void;
   private currentCommandReject?: (error: Error) => void;
   private currentTimeoutTimer?: NodeJS.Timeout;
@@ -164,6 +173,10 @@ export class ClaudePersistentExecutor extends EventEmitter {
   // Track tool execution state for separator insertion
   private hasSeenToolUse = false;
   private hasSentSeparator = false;
+
+  // Structured content collection for rich formatting
+  private structuredContentBlocks: ContentBlockUnion[] = [];
+  private currentStructuredCallback?: (content: StructuredContent) => void;
 
   // Current task context for hooks
   private currentTaskId: string | null = null;
@@ -638,7 +651,16 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 // Mark that we've seen a tool use
                 this.hasSeenToolUse = true;
 
-                // Format tool use message with compact indicator
+                // Send structured tool use event if callback is available
+                if (this.currentToolUseCallback) {
+                  this.currentToolUseCallback({
+                    name: block.name || 'unknown',
+                    id: block.id || 'unknown',
+                    input: block.input || {}
+                  });
+                }
+
+                // Format tool use message with compact indicator (for backward compatibility)
                 const toolMsg = formatToolUseMessage({
                   name: block.name || 'unknown',
                   id: block.id || 'unknown',
@@ -706,7 +728,16 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 console.log(`[ClaudePersistent] Tool result received: tool_use_id=${block.id}, is_error=${isError}`);
                 console.log(`[ClaudePersistent] Tool result full: ${JSON.stringify(message).substring(0, 500)}`);
 
-                // Display tool result to user with compact format
+                // Send structured tool result event if callback is available
+                if (this.currentToolResultCallback) {
+                  this.currentToolResultCallback({
+                    tool_use_id: block.id || 'unknown',
+                    content: block.content || '(no content)',
+                    is_error: isError
+                  });
+                }
+
+                // Display tool result to user with compact format (for backward compatibility)
                 const resultMsg = formatToolResultMessage({
                   id: block.id || 'unknown',
                   content: block.content || '(no content)',
@@ -974,6 +1005,8 @@ export class ClaudePersistentExecutor extends EventEmitter {
   private resetCurrentCommand(): void {
     this.currentOutputBuffer = [];
     this.currentStreamCallback = undefined;
+    this.currentToolUseCallback = undefined;
+    this.currentToolResultCallback = undefined;
     this.currentCommandResolve = undefined;
     this.currentCommandReject = undefined;
     if (this.currentTimeoutTimer) {
@@ -1012,8 +1045,14 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
     this.isProcessing = true;
     this.currentStreamCallback = command.options.onStream;
+    this.currentStructuredCallback = command.options.onStructuredContent;
+    this.currentToolUseCallback = command.options.onToolUse;
+    this.currentToolResultCallback = command.options.onToolResult;
     this.currentCommandResolve = command.resolve;
     this.currentCommandReject = command.reject;
+
+    // Reset structured content collection
+    this.structuredContentBlocks = [];
 
     // Generate task ID and track start time for hooks
     this.currentTaskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;

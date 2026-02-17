@@ -1,6 +1,6 @@
 import { WebSocketClient } from './WebSocketClient';
 import { DirectoryGuard } from '../security/DirectoryGuard';
-import { IncomingMessage, OutgoingMessage } from '../types';
+import { IncomingMessage, OutgoingMessage, StructuredContent, ToolUseInfo, ToolResultInfo } from '../types';
 import type { ClaudeExecutor, ClaudePersistentExecutor } from '../executor';
 import { FeishuNotificationAdapter } from '../hooks';
 import { spawn } from 'child_process';
@@ -432,6 +432,12 @@ You can also use natural language commands to control Claude Code CLI.`,
         onStream: (chunk: string) => {
           this.sendStreamChunk(messageId, chunk);
         },
+        onToolUse: (toolUse: ToolUseInfo) => {
+          this.sendToolUse(messageId, toolUse);
+        },
+        onToolResult: (toolResult: ToolResultInfo) => {
+          this.sendToolResult(messageId, toolResult);
+        },
       });
 
       // Only send success status, not the output
@@ -457,12 +463,67 @@ You can also use natural language commands to control Claude Code CLI.`,
         type: 'stream',
         messageId,
         chunk,
+        streamType: 'text',
         openId: this.currentOpenId,
         timestamp: Date.now(),
       });
     } catch (error) {
       // Ignore send errors, don't affect main flow
       console.error('Failed to send stream chunk:', error);
+    }
+  }
+
+  /**
+   * Send tool use event
+   */
+  private sendToolUse(messageId: string, toolUse: ToolUseInfo): void {
+    try {
+      this.wsClient.send({
+        type: 'stream',
+        messageId,
+        streamType: 'tool_use',
+        toolUse,
+        openId: this.currentOpenId,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error('Failed to send tool use:', error);
+    }
+  }
+
+  /**
+   * Send tool result event
+   */
+  private sendToolResult(messageId: string, toolResult: ToolResultInfo): void {
+    try {
+      this.wsClient.send({
+        type: 'stream',
+        messageId,
+        streamType: 'tool_result',
+        toolResult,
+        openId: this.currentOpenId,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error('Failed to send tool result:', error);
+    }
+  }
+
+  /**
+   * Send structured content for rich formatting
+   */
+  private sendStructuredContent(messageId: string, structuredContent: StructuredContent): void {
+    try {
+      this.wsClient.send({
+        type: 'structured',
+        messageId,
+        structuredContent,
+        openId: this.currentOpenId,
+        timestamp: Date.now(),
+        cwd: this.executor.getCurrentWorkingDirectory(),
+      } as OutgoingMessage);
+    } catch (error) {
+      console.error('Failed to send structured content:', error);
     }
   }
 

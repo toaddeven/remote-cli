@@ -527,12 +527,16 @@ Examples:
    * - Once a message (except the last one) is created, its content is frozen
    * - Only the last message in the chain gets updated with new content
    * - New messages are only created when the last message exceeds the limit
+   *
+   * @param messageId The Feishu message ID
+   * @param elements Array of Feishu Card 2.0 elements
+   * @param openId User's open_id for creating continuation messages
    */
-  async updateStreamingMessage(messageId: string, text: string, openId?: string): Promise<boolean> {
-    return this.withMessageLock(messageId, () => this._updateStreamingMessage(messageId, text, openId));
+  async updateStreamingMessage(messageId: string, elements: any[], openId?: string): Promise<boolean> {
+    return this.withMessageLock(messageId, () => this._updateStreamingMessage(messageId, elements, openId));
   }
 
-  private async _updateStreamingMessage(messageId: string, text: string, openId?: string): Promise<boolean> {
+  private async _updateStreamingMessage(messageId: string, elements: any[], openId?: string): Promise<boolean> {
     try {
       // Get or initialize message chain
       let chain = this.messageChains.get(messageId);
@@ -541,101 +545,19 @@ Examples:
         this.messageChains.set(messageId, chain);
       }
 
-      // Get the last processed length for this chain
-      const lastProcessedLength = this.lastProcessedLengths.get(messageId) || 0;
-
-      // Split text into chunks
-      const chunks = this.splitTextIntoChunks(text);
-
-      // Calculate cumulative lengths to determine which chunk each character belongs to
-      const cumulativeLengths: number[] = [];
-      let cumulative = 0;
-      for (const chunk of chunks) {
-        cumulative += chunk.length;
-        cumulativeLengths.push(cumulative);
-      }
-
-      // Determine which chunk contains the last processed character
-      // This tells us which messages are "complete" (frozen) vs which is still growing
-      let lastProcessedChunkIndex = 0;
-      for (let i = 0; i < cumulativeLengths.length; i++) {
-        if (lastProcessedLength <= cumulativeLengths[i]) {
-          lastProcessedChunkIndex = i;
-          break;
-        }
-      }
-
-      // Update existing messages and create new ones as needed
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const isLastChunk = i === chunks.length - 1;
-
-        // Add continuation indicator if not the last chunk
-        const content = isLastChunk ? chunk : `${chunk}\n\n_➡️ Continued in next message..._`;
-
-        if (i < chain.length) {
-          // This is an existing message
-          // Only update if:
-          // 1. It's the last chunk (still receiving new content)
-          // 2. OR it's the chunk containing the last processed position (transitioning from growing to frozen)
-          const shouldUpdate = isLastChunk || i >= lastProcessedChunkIndex;
-
-          if (shouldUpdate) {
-            await this.client.im.message.patch({
-              path: { message_id: chain[i] },
-              data: {
-                content: JSON.stringify({
-                  schema: '2.0',
-                  body: {
-                    elements: [
-                      {
-                        tag: 'markdown',
-                        content,
-                      },
-                    ],
-                  },
-                }),
-              },
-            });
-          }
-          // If not updating, the message keeps its previous content (frozen)
-        } else if (openId) {
-          // Create new message for additional chunks
-          const prefix = `_⬅️ Continued from previous message..._\n\n`;
-          const newContent = isLastChunk ? `${prefix}${chunk}` : `${prefix}${chunk}\n\n_➡️ Continued in next message..._`;
-
-          const result = await this.client.im.message.create({
-            params: { receive_id_type: 'open_id' },
-            data: {
-              receive_id: openId,
-              msg_type: 'interactive',
-              content: JSON.stringify({
-                schema: '2.0',
-                body: {
-                  elements: [
-                    {
-                      tag: 'markdown',
-                      content: newContent,
-                    },
-                  ],
-                },
-              }),
+      // For now, just update the single message with all elements
+      // TODO: In the future, implement message chaining if elements become too large
+      await this.client.im.message.patch({
+        path: { message_id: messageId },
+        data: {
+          content: JSON.stringify({
+            schema: '2.0',
+            body: {
+              elements,
             },
-          });
-
-          const newMessageId = result?.data?.message_id;
-          if (newMessageId) {
-            chain.push(newMessageId);
-            console.log(`[FeishuHandler] Created continuation message ${newMessageId} for chain (part ${i + 1}/${chunks.length})`);
-          }
-        } else {
-          console.warn(`[FeishuHandler] Cannot create continuation message: openId not provided`);
-          break;
-        }
-      }
-
-      // Update the last processed length
-      this.lastProcessedLengths.set(messageId, text.length);
+          }),
+        },
+      });
 
       return true;
     } catch (error: any) {
@@ -647,12 +569,17 @@ Examples:
   /**
    * Finalize streaming message
    * Automatically creates new messages if content exceeds Feishu's size limit
+   *
+   * @param messageId The Feishu message ID
+   * @param elements Array of Feishu Card 2.0 elements
+   * @param sessionAbbr Optional session abbreviation
+   * @param openId User's open_id for creating continuation messages
    */
-  async finalizeStreamingMessage(messageId: string, finalText: string, sessionAbbr?: string, openId?: string): Promise<boolean> {
-    return this.withMessageLock(messageId, () => this._finalizeStreamingMessage(messageId, finalText, sessionAbbr, openId));
+  async finalizeStreamingMessage(messageId: string, elements: any[], sessionAbbr?: string, openId?: string): Promise<boolean> {
+    return this.withMessageLock(messageId, () => this._finalizeStreamingMessage(messageId, elements, sessionAbbr, openId));
   }
 
-  private async _finalizeStreamingMessage(messageId: string, finalText: string, sessionAbbr?: string, openId?: string): Promise<boolean> {
+  private async _finalizeStreamingMessage(messageId: string, elements: any[], sessionAbbr?: string, openId?: string): Promise<boolean> {
     try {
       // Get or initialize message chain
       let chain = this.messageChains.get(messageId);
@@ -667,128 +594,36 @@ Examples:
         noteContent += ` · Session: ${sessionAbbr}`;
       }
 
-      // Split text into chunks
-      const chunks = this.splitTextIntoChunks(finalText);
-
-      // Use lastProcessedLengths to determine which messages are frozen
-      // Same logic as updateStreamingMessage to ensure consistency
-      const lastProcessedLength = this.lastProcessedLengths.get(messageId) || 0;
-
-      let lastProcessedChunkIndex = 0;
-      if (lastProcessedLength > 0) {
-        let cumulative = 0;
-        for (let i = 0; i < chunks.length; i++) {
-          cumulative += chunks[i].length;
-          if (lastProcessedLength <= cumulative) {
-            lastProcessedChunkIndex = i;
-            break;
-          }
-          // If lastProcessedLength exceeds all chunks, point to last chunk
-          lastProcessedChunkIndex = i;
-        }
-      }
-
-      // Update existing messages and create new ones as needed
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const isLastChunk = i === chunks.length - 1;
-
-        // Add continuation indicator if not the last chunk
-        const content = isLastChunk ? chunk : `${chunk}\n\n_➡️ Continued in next message..._`;
-
-        // Only add completion note to the last chunk
-        const elements: any[] = [
-          {
-            tag: 'markdown',
-            content,
+      // Add completion note element
+      const finalElements = [
+        ...elements,
+        {
+          tag: 'div',
+          text: {
+            tag: 'plain_text',
+            content: noteContent,
           },
-        ];
+          icon: {
+            tag: 'standard_icon',
+            token: 'check-circle-filled',
+            color: 'green',
+          },
+        },
+      ];
 
-        if (isLastChunk) {
-          elements.push({
-            tag: 'div',
-            text: {
-              tag: 'plain_text',
-              content: noteContent,
+      // Update the message with final content
+      // TODO: In the future, implement message chaining if elements become too large
+      await this.client.im.message.patch({
+        path: { message_id: messageId },
+        data: {
+          content: JSON.stringify({
+            schema: '2.0',
+            body: {
+              elements: finalElements,
             },
-            icon: {
-              tag: 'standard_icon',
-              token: 'check-circle-filled',
-              color: 'green',
-            },
-          });
-        }
-
-        if (i < chain.length) {
-          // This is an existing message in the chain
-          // Only update if it's at or after the last processed chunk index
-          // Messages before that are frozen and should not be re-patched
-          const shouldUpdate = isLastChunk || i >= lastProcessedChunkIndex;
-
-          if (shouldUpdate) {
-            await this.client.im.message.patch({
-              path: { message_id: chain[i] },
-              data: {
-                content: JSON.stringify({
-                  schema: '2.0',
-                  body: {
-                    elements,
-                  },
-                }),
-              },
-            });
-          }
-        } else if (openId) {
-          // Create new message for additional chunks
-          const prefix = `_⬅️ Continued from previous message..._\n\n`;
-          const newContent = isLastChunk ? `${prefix}${chunk}` : `${prefix}${chunk}\n\n_➡️ Continued in next message..._`;
-
-          const newElements: any[] = [
-            {
-              tag: 'markdown',
-              content: newContent,
-            },
-          ];
-
-          if (isLastChunk) {
-            newElements.push({
-              tag: 'div',
-              text: {
-                tag: 'plain_text',
-                content: noteContent,
-              },
-              icon: {
-                tag: 'standard_icon',
-                token: 'check-circle-filled',
-                color: 'green',
-              },
-            });
-          }
-
-          const result = await this.client.im.message.create({
-            params: { receive_id_type: 'open_id' },
-            data: {
-              receive_id: openId,
-              msg_type: 'interactive',
-              content: JSON.stringify({
-                schema: '2.0',
-                body: {
-                  elements: newElements,
-                },
-              }),
-            },
-          });
-
-          const newMessageId = result?.data?.message_id;
-          if (newMessageId) {
-            chain.push(newMessageId);
-            console.log(`[FeishuHandler] Created final continuation message ${newMessageId} for chain (part ${i + 1}/${chunks.length})`);
-          }
-        } else {
-          console.warn(`[FeishuHandler] Cannot create continuation message: openId not provided`);
-          break;
-        }
-      }
+          }),
+        },
+      });
 
       // Clean up message chain tracking
       this.messageChains.delete(messageId);

@@ -8,7 +8,8 @@ import { JsonStore } from './storage/JsonStore';
 import { FeishuLongConnHandler } from './feishu/FeishuLongConnHandler';
 import { ConnectionHub } from './websocket/ConnectionHub';
 import { BindingManager } from './binding/BindingManager';
-import { MessageType } from './types';
+import { MessageType, ToolUseInfo, ToolResultInfo } from './types';
+import { FeishuCardElement, createToolUseElement, createToolResultElement, createMarkdownElement } from './utils/ToolFormatter';
 
 /**
  * Router Server
@@ -24,8 +25,16 @@ export class RouterServer {
   private connectionHub: ConnectionHub;
   private bindingManager: BindingManager;
   private cleanupInterval: NodeJS.Timeout | null = null;
-  // Track streaming messages: messageId -> { openId, feishuMessageId, buffer, hasUpdated, createdAt, deviceId }
-  private streamingMessages: Map<string, { openId: string; feishuMessageId: string | null; buffer: string; hasUpdated: boolean; createdAt: number; deviceId: string }> = new Map();
+  // Track streaming messages: messageId -> { openId, feishuMessageId, elements, currentTextContent, hasUpdated, createdAt, deviceId }
+  private streamingMessages: Map<string, {
+    openId: string;
+    feishuMessageId: string | null;
+    elements: FeishuCardElement[];
+    currentTextContent: string;
+    hasUpdated: boolean;
+    createdAt: number;
+    deviceId: string;
+  }> = new Map();
   private readonly STREAMING_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes timeout
 
   constructor(config: ConfigManager, store: JsonStore) {
@@ -50,7 +59,15 @@ export class RouterServer {
       console.log(`[RouterServer] Registering streaming session: msgId=${messageId}, feishuMsgId=${feishuMessageId}, deviceId=${deviceId}`);
       // Register this message as a streaming message so chunks and response update the same card
       // hasUpdated starts as false to ensure first content is immediately shown
-      this.streamingMessages.set(messageId, { openId, feishuMessageId, buffer: '', hasUpdated: false, createdAt: Date.now(), deviceId });
+      this.streamingMessages.set(messageId, {
+        openId,
+        feishuMessageId,
+        elements: [],
+        currentTextContent: '',
+        hasUpdated: false,
+        createdAt: Date.now(),
+        deviceId
+      });
       console.log(`[RouterServer] Total streaming sessions: ${this.streamingMessages.size}`);
     });
 
@@ -258,7 +275,23 @@ export class RouterServer {
             case 'stream':
               // Handle streaming output from device
               if (message.messageId && message.openId) {
-                await this.handleStreamingChunk(message.messageId, message.openId, message.chunk || '');
+                const streamType = message.streamType || 'text';
+
+                switch (streamType) {
+                  case 'text':
+                    await this.handleTextChunk(message.messageId, message.openId, message.chunk || '');
+                    break;
+                  case 'tool_use':
+                    if (message.toolUse) {
+                      await this.handleToolUse(message.messageId, message.openId, message.toolUse);
+                    }
+                    break;
+                  case 'tool_result':
+                    if (message.toolResult) {
+                      await this.handleToolResult(message.messageId, message.openId, message.toolResult);
+                    }
+                    break;
+                }
               }
               break;
 
@@ -355,27 +388,28 @@ export class RouterServer {
   /**
    * Handle streaming chunk from device
    */
-  private async handleStreamingChunk(messageId: string, openId: string, chunk: string): Promise<void> {
-    console.log(`[RouterServer] Received stream chunk for ${messageId}, chunk length: ${chunk.length}`);
+  /**
+   * Handle text streaming chunk
+   */
+  private async handleTextChunk(messageId: string, openId: string, chunk: string): Promise<void> {
+    console.log(`[RouterServer] Received text chunk for ${messageId}, chunk length: ${chunk.length}`);
     const streamData = this.streamingMessages.get(messageId);
 
     // If no streaming session exists, ignore the chunk
-    // The session should have been created when the command was sent
     if (!streamData) {
       console.log(`[RouterServer] No streaming session found for ${messageId}, ignoring chunk`);
-      console.log(`[RouterServer] Known sessions: ${Array.from(this.streamingMessages.keys()).join(', ')}`);
       return;
     }
 
-    // Accumulate chunk and update session activity time
-    streamData.buffer += chunk;
-    streamData.createdAt = Date.now(); // Update activity timestamp to prevent timeout
+    // Accumulate text content
+    streamData.currentTextContent += chunk;
+    streamData.createdAt = Date.now(); // Update activity timestamp
 
     // Determine if we should update the card now
     const now = Date.now();
     const lastUpdate = this.lastStreamUpdateTime.get(messageId) || 0;
     const timeSinceLastUpdate = now - lastUpdate;
-    const bufferLength = streamData.buffer.length;
+    const contentLength = streamData.currentTextContent.length;
 
     // Update if:
     // 1. We have a feishuMessageId
@@ -385,18 +419,92 @@ export class RouterServer {
     //    c. Enough time has passed since last update
     const shouldUpdate = streamData.feishuMessageId && (
       !streamData.hasUpdated || // First content - always show immediately
-      (bufferLength % this.STREAM_UPDATE_MIN_LENGTH === 0) || // Every N characters
+      (contentLength % this.STREAM_UPDATE_MIN_LENGTH === 0) || // Every N characters
       (timeSinceLastUpdate >= this.STREAM_UPDATE_INTERVAL_MS) // Time-based
     );
 
     if (shouldUpdate && streamData.feishuMessageId) {
+      // Build current element list: existing elements + current text (if any)
+      const elements = [...streamData.elements];
+      if (streamData.currentTextContent.trim()) {
+        elements.push(createMarkdownElement(streamData.currentTextContent));
+      }
+
       await this.feishuLongConnHandler.updateStreamingMessage(
         streamData.feishuMessageId,
-        streamData.buffer,
-        openId // Pass openId for creating continuation messages
+        elements,
+        openId
       );
       this.lastStreamUpdateTime.set(messageId, now);
-      streamData.hasUpdated = true; // Mark as updated
+      streamData.hasUpdated = true;
+    }
+  }
+
+  /**
+   * Handle tool use event
+   */
+  private async handleToolUse(messageId: string, openId: string, toolUse: ToolUseInfo): Promise<void> {
+    console.log(`[RouterServer] Received tool_use for ${messageId}: ${toolUse.name}`);
+    const streamData = this.streamingMessages.get(messageId);
+
+    if (!streamData) {
+      console.log(`[RouterServer] No streaming session found for ${messageId}`);
+      return;
+    }
+
+    // Flush current text content to elements if any
+    if (streamData.currentTextContent.trim()) {
+      streamData.elements.push(createMarkdownElement(streamData.currentTextContent));
+      streamData.currentTextContent = '';
+    }
+
+    // Add tool use elements (divider + markdown)
+    const toolUseElements = createToolUseElement(toolUse);
+    streamData.elements.push(...toolUseElements);
+    streamData.createdAt = Date.now();
+
+    // Immediately update card to show tool use
+    if (streamData.feishuMessageId) {
+      await this.feishuLongConnHandler.updateStreamingMessage(
+        streamData.feishuMessageId,
+        streamData.elements,
+        openId
+      );
+      streamData.hasUpdated = true;
+    }
+  }
+
+  /**
+   * Handle tool result event
+   */
+  private async handleToolResult(messageId: string, openId: string, toolResult: ToolResultInfo): Promise<void> {
+    console.log(`[RouterServer] Received tool_result for ${messageId}: ${toolResult.tool_use_id}`);
+    const streamData = this.streamingMessages.get(messageId);
+
+    if (!streamData) {
+      console.log(`[RouterServer] No streaming session found for ${messageId}`);
+      return;
+    }
+
+    // Flush current text content to elements if any
+    if (streamData.currentTextContent.trim()) {
+      streamData.elements.push(createMarkdownElement(streamData.currentTextContent));
+      streamData.currentTextContent = '';
+    }
+
+    // Add tool result elements (markdown + status div)
+    const toolResultElements = createToolResultElement(toolResult);
+    streamData.elements.push(...toolResultElements);
+    streamData.createdAt = Date.now();
+
+    // Immediately update card to show tool result
+    if (streamData.feishuMessageId) {
+      await this.feishuLongConnHandler.updateStreamingMessage(
+        streamData.feishuMessageId,
+        streamData.elements,
+        openId
+      );
+      streamData.hasUpdated = true;
     }
   }
 
@@ -410,26 +518,33 @@ export class RouterServer {
     const { feishuMessageId, openId } = streamData;
 
     if (feishuMessageId) {
+      // Flush any remaining text content
+      if (streamData.currentTextContent.trim()) {
+        streamData.elements.push(createMarkdownElement(streamData.currentTextContent));
+        streamData.currentTextContent = '';
+      }
+
+      // If there are no elements at all, use the output parameter as fallback
+      if (streamData.elements.length === 0 && output) {
+        streamData.elements.push(createMarkdownElement(output));
+      }
+
       if (success) {
-        // Use accumulated buffer if available, otherwise fall back to output parameter
-        // Buffer contains all streamed content, which is more accurate for long-running tasks
-        const finalContent = streamData.buffer || output || '✅ Completed';
         await this.feishuLongConnHandler.finalizeStreamingMessage(
           feishuMessageId,
-          finalContent,
+          streamData.elements,
           sessionAbbr,
-          openId // Pass openId for creating continuation messages
+          openId
         );
       } else {
-        // Update card with error message
-        const errorContent = streamData.buffer
-          ? `${streamData.buffer}\n\n❌ Error: ${error || 'Command failed'}`
-          : `❌ Command failed:\n${error || 'Unknown error'}`;
+        // Add error message to elements
+        const errorMsg = error || 'Command failed';
+        streamData.elements.push(createMarkdownElement(`\n\n❌ **Error:** ${errorMsg}`));
         await this.feishuLongConnHandler.finalizeStreamingMessage(
           feishuMessageId,
-          errorContent,
+          streamData.elements,
           undefined,
-          openId // Pass openId for creating continuation messages
+          openId
         );
       }
     }
