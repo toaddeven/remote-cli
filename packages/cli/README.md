@@ -1,4 +1,4 @@
-# @xiaoyu/remote-cli
+# @yu_robotics/remote-cli
 
 Remote control your [Claude Code](https://claude.ai/code) CLI from anywhere using your mobile phone through Feishu (Lark) messaging.
 
@@ -14,12 +14,12 @@ Remote control your [Claude Code](https://claude.ai/code) CLI from anywhere usin
 
 - **Node.js** >= 18.0.0
 - **Claude Code CLI** installed and configured
-- Access to a Feishu (Lark) bot connected to a [remote-cli-router](https://www.npmjs.com/package/@xiaoyu/remote-cli-router) server
+- Access to a Feishu (Lark) bot connected to a [remote-cli-router](https://www.npmjs.com/package/@yu_robotics/remote-cli-router) server
 
 ## Installation
 
 ```bash
-npm install -g @xiaoyu/remote-cli
+npm install -g @yu_robotics/remote-cli
 ```
 
 ## Quick Start

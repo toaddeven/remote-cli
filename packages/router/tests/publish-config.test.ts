@@ -8,7 +8,7 @@ const pkg = JSON.parse(readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf-8'
 describe('Router package publish configuration', () => {
   describe('package.json required fields', () => {
     it('should have a scoped package name', () => {
-      expect(pkg.name).toBe('@xiaoyu/remote-cli-router');
+      expect(pkg.name).toBe('@yu_robotics/remote-cli-router');
     });
 
     it('should have a valid version', () => {

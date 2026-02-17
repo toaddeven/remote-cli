@@ -37,7 +37,7 @@ npm unlink
 Install globally once published to npm:
 
 ```bash
-npm install -g @xiaoyu/remote-cli-router
+npm install -g @yu_robotics/remote-cli-router
 ```
 
 ## Configuration

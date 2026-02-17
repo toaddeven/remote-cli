@@ -1,5 +1,5 @@
 {
-  "name": "@xiaoyu/remote-cli",
+  "name": "@yu_robotics/remote-cli",
   "version": "1.0.0",
   "description": "Remote control Claude Code CLI via mobile",
   "main": "dist/index.js",

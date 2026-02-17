@@ -66,7 +66,7 @@ npm run dev
 ### Production
 
 ```bash
-npm run build -w @xiaoyu/remote-cli-router
+npm run build -w @yu_robotics/remote-cli-router
 remote-cli-router start
 ```
 

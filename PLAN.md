@@ -66,7 +66,7 @@ Developers want to remotely control Claude Code CLI on their work computers via 
 #### 2. Local Client (remote-cli)
 - **Responsibilities**: Receive commands, invoke Claude Code, security control, return results
 - **Tech Stack**: TypeScript + Claude Agent SDK + WebSocket Client
-- **Installation**: npm global install (`npm install -g @xiaoyu/remote-cli`)
+- **Installation**: npm global install (`npm install -g @yu_robotics/remote-cli`)
 
 ---
 
@@ -437,7 +437,7 @@ remote-cli/
 
 ```json
 {
-  "name": "@xiaoyu/remote-cli",
+  "name": "@yu_robotics/remote-cli",
   "version": "1.0.0",
   "bin": {
     "remote-cli": "./bin/remote-cli.js"
@@ -459,7 +459,7 @@ remote-cli/
 
 ```json
 {
-  "name": "@xiaoyu/remote-cli-router",
+  "name": "@yu_robotics/remote-cli-router",
   "version": "1.0.0",
   "dependencies": {
     "koa": "^2.15.0",
@@ -571,7 +571,7 @@ remote-cli/
 
 ```bash
 # 1. Installation
-npm install -g @xiaoyu/remote-cli
+npm install -g @yu_robotics/remote-cli
 
 # 2. Initialization
 remote-cli init

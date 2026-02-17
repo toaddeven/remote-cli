@@ -1,6 +1,6 @@
-# @xiaoyu/remote-cli-router
+# @yu_robotics/remote-cli-router
 
-Router server for [remote-cli](https://www.npmjs.com/package/@xiaoyu/remote-cli) — manages message forwarding between Feishu (Lark) and local CLI clients via WebSocket.
+Router server for [remote-cli](https://www.npmjs.com/package/@yu_robotics/remote-cli) — manages message forwarding between Feishu (Lark) and local CLI clients via WebSocket.
 
 ## Overview
 
@@ -21,7 +21,7 @@ The router server acts as a bridge between Feishu messaging and developer machin
 ## Installation
 
 ```bash
-npm install -g @xiaoyu/remote-cli-router
+npm install -g @yu_robotics/remote-cli-router
 ```
 
 ## Quick Start

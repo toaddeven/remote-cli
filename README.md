@@ -41,13 +41,13 @@ The local client runs on your development machine and connects to the router ser
 Once the package is published to npm, you can install it globally:
 
 ```bash
-npm install -g @xiaoyu/remote-cli
+npm install -g @yu_robotics/remote-cli
 ```
 
 Or using yarn:
 
 ```bash
-yarn global add @xiaoyu/remote-cli
+yarn global add @yu_robotics/remote-cli
 ```
 
 #### Option B: Install from Source (Local Development)
@@ -63,7 +63,7 @@ cd remote-cli
 npm install
 
 # Build the CLI package
-npm run build -w @xiaoyu/remote-cli
+npm run build -w @yu_robotics/remote-cli
 
 # Link the package globally for local development
 cd packages/cli
@@ -84,7 +84,7 @@ npm install -g .
 To uninstall the locally installed version later:
 
 ```bash
-npm uninstall -g @xiaoyu/remote-cli
+npm uninstall -g @yu_robotics/remote-cli
 # or if you used npm link:
 cd packages/cli
 npm unlink

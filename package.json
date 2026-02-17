@@ -10,8 +10,8 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules",
-    "router:dev": "npm run dev -w @xiaoyu/remote-cli-router",
-    "cli:dev": "npm run dev -w @xiaoyu/remote-cli"
+    "router:dev": "npm run dev -w @yu_robotics/remote-cli-router",
+    "cli:dev": "npm run dev -w @yu_robotics/remote-cli"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
