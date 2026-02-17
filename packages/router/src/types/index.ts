@@ -73,6 +73,7 @@ export interface ResponseMessage extends WSMessage {
     success: boolean;
     output?: string;
     error?: string;
+    cwd?: string;
   };
 }
 
@@ -140,5 +141,6 @@ export interface StructuredMessage extends WSMessage {
     error?: string;
     sessionAbbr?: string;
     openId?: string;
+    cwd?: string;
   };
 }

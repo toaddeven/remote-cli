@@ -39,7 +39,7 @@ export class ConfigManager {
     try {
       const content = await fs.readFile(configFile, 'utf-8');
       config = JSON.parse(content);
-      // Merge with defaults for any missing fields (e.g. new worktree config)
+      // Merge with defaults for any missing fields
       config = ConfigManager.mergeWithDefaults(config);
       // Validate config structure
       if (!ConfigManager.isValidConfig(config)) {
@@ -71,10 +71,6 @@ export class ConfigManager {
         ...DEFAULT_CONFIG.server,
         ...(config.server || {}),
       },
-      worktree: {
-        ...DEFAULT_CONFIG.worktree,
-        ...(config.worktree || {}),
-      },
     };
   }
 
@@ -96,12 +92,7 @@ export class ConfigManager {
       typeof config.server === 'object' &&
       typeof config.server.url === 'string' &&
       typeof config.server.reconnectInterval === 'number' &&
-      typeof config.server.heartbeatInterval === 'number' &&
-      config.worktree &&
-      typeof config.worktree === 'object' &&
-      typeof config.worktree.enabled === 'boolean' &&
-      typeof config.worktree.autoCleanupDays === 'number' &&
-      typeof config.worktree.baseBranch === 'string'
+      typeof config.server.heartbeatInterval === 'number'
     );
   }
 

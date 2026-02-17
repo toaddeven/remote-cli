@@ -77,11 +77,35 @@ export async function startCommand(
     const directoryGuard = new DirectoryGuard(security.allowedDirectories);
     const executor = createClaudeExecutor(directoryGuard, 'auto');
 
+    // Check if lastWorkingDirectory is set, if not warn user
+    const lastWorkingDirectory = config.get('lastWorkingDirectory');
+    if (!lastWorkingDirectory) {
+      spinner.warn('Working directory not set');
+      console.log('');
+      console.log('⚠️  **Working Directory Not Set**');
+      console.log('');
+      console.log('You haven\'t set a working directory yet.');
+      console.log('Use `/cd <directory>` command via Feishu to set your working directory.');
+      console.log('');
+      console.log('Example: /cd ~/workspace/my-project');
+      console.log('');
+      spinner.start('Continuing without working directory...');
+    } else {
+      // Try to set the last working directory
+      try {
+        await executor.setWorkingDirectory(lastWorkingDirectory);
+        console.log(`📂 Working directory: ${lastWorkingDirectory}`);
+      } catch (error) {
+        console.warn(`⚠️  Failed to set working directory: ${lastWorkingDirectory}`);
+        console.log('You can change it later with `/cd <directory>` command.');
+      }
+    }
+
     // Create WebSocket URL
     const wsUrl = serverUrl.replace(/^http/, 'ws') + '/ws';
     const wsClient = new WebSocketClient(wsUrl, deviceId);
 
-    const messageHandler = new MessageHandler(wsClient, executor, directoryGuard);
+    const messageHandler = new MessageHandler(wsClient, executor, directoryGuard, config);
 
     // Setup event handlers
     wsClient.on('connected', () => {

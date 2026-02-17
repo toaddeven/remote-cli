@@ -1160,11 +1160,11 @@ Examples:
    * @param sessionAbbr Optional session abbreviation
    * @param openId User's open_id for creating continuation messages
    */
-  async finalizeStreamingMessage(messageId: string, elements: any[], sessionAbbr?: string, openId?: string): Promise<boolean> {
-    return this.withMessageLock(messageId, () => this._finalizeStreamingMessage(messageId, elements, sessionAbbr, openId));
+  async finalizeStreamingMessage(messageId: string, elements: any[], sessionAbbr?: string, openId?: string, cwd?: string): Promise<boolean> {
+    return this.withMessageLock(messageId, () => this._finalizeStreamingMessage(messageId, elements, sessionAbbr, openId, cwd));
   }
 
-  private async _finalizeStreamingMessage(messageId: string, elements: any[], sessionAbbr?: string, openId?: string): Promise<boolean> {
+  private async _finalizeStreamingMessage(messageId: string, elements: any[], sessionAbbr?: string, openId?: string, cwd?: string): Promise<boolean> {
     try {
       // Get or initialize message chain
       let chain = this.messageChains.get(messageId);
@@ -1173,10 +1173,15 @@ Examples:
         this.messageChains.set(messageId, chain);
       }
 
-      // Build note content with session abbreviation if available
+      // Build note content with session abbreviation and working directory if available
       let noteContent = '✅ Completed';
       if (sessionAbbr) {
         noteContent += ` · Session: ${sessionAbbr}`;
+      }
+      if (cwd) {
+        // Format cwd to show ~ for home directory
+        const formattedCwd = cwd.replace(process.env.HOME || '/Users', '~');
+        noteContent += `\n📂 **Working Directory:** \`${formattedCwd}\``;
       }
 
       // Add completion note element as markdown

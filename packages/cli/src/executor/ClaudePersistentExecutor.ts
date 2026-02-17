@@ -2,10 +2,8 @@ import { spawn, ChildProcess } from 'child_process';
 import { DirectoryGuard } from '../security/DirectoryGuard';
 import { claudeCodeHooks } from '../hooks/ClaudeCodeHooks';
 import { StructuredContent, ContentBlockUnion, ToolUseInfo, ToolResultInfo } from '../types';
-import { WorktreeManager } from '../worktree/WorktreeManager';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { EventEmitter } from 'events';
 
 /**
@@ -117,25 +115,6 @@ export interface PersistentClaudeResult {
 }
 
 /**
- * Get Claude's global sessions directory
- */
-function getClaudeSessionsDir(): string | null {
-  const homeDir = os.homedir();
-  const possiblePaths = [
-    path.join(homeDir, '.claude', 'sessions'),
-    path.join(homeDir, '.config', 'claude', 'sessions'),
-    path.join(homeDir, 'Library', 'Application Support', 'Claude', 'sessions'),
-  ];
-
-  for (const dir of possiblePaths) {
-    if (fs.existsSync(dir)) {
-      return dir;
-    }
-  }
-  return null;
-}
-
-/**
  * Claude Persistent Executor
  *
  * Maintains a long-running Claude process and communicates via stdin/stdout
@@ -148,10 +127,6 @@ export class ClaudePersistentExecutor extends EventEmitter {
   private defaultTimeout = 600000; // 10 minutes default, but will extend on activity
   private sessionId: string | null = null;
   private sessionFilePath: string;
-
-  // Worktree management
-  private worktreeManager: WorktreeManager;
-  private useWorktrees: boolean = true; // Enable worktree isolation by default
 
   // Persistent process
   private claudeProcess: ChildProcess | null = null;
@@ -196,7 +171,6 @@ export class ClaudePersistentExecutor extends EventEmitter {
     this.directoryGuard = directoryGuard;
     this.currentWorkingDirectory = process.cwd();
     this.sessionFilePath = path.join(this.currentWorkingDirectory, '.claude-session');
-    this.worktreeManager = new WorktreeManager();
     this.loadSessionId();
   }
 
@@ -236,44 +210,6 @@ export class ClaudePersistentExecutor extends EventEmitter {
   }
 
   /**
-   * Get recent session ID from Claude's sessions directory
-   */
-  private async getRecentSessionId(): Promise<string | null> {
-    try {
-      const sessionsDir = getClaudeSessionsDir();
-      if (!sessionsDir) {
-        return null;
-      }
-
-      const entries = fs.readdirSync(sessionsDir, { withFileTypes: true });
-      const sessionDirs = entries
-        .filter(entry => entry.isDirectory())
-        .map(entry => {
-          const sessionPath = path.join(sessionsDir, entry.name);
-          const stats = fs.statSync(sessionPath);
-          return {
-            id: entry.name,
-            mtime: stats.mtime,
-          };
-        })
-        .filter(session => {
-          const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          return uuidPattern.test(session.id);
-        })
-        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-
-      if (sessionDirs.length === 0) {
-        return null;
-      }
-
-      return sessionDirs[0].id;
-    } catch (error) {
-      console.error('[ClaudePersistent] Failed to get recent session ID:', error);
-      return null;
-    }
-  }
-
-  /**
    * Get current working directory
    */
   getCurrentWorkingDirectory(): string {
@@ -282,42 +218,12 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
   /**
    * Set working directory
-   * Now supports automatic worktree creation for git repositories
    */
   async setWorkingDirectory(targetPath: string): Promise<void> {
-    let resolvedPath = this.directoryGuard.resolveWorkingDirectory(
+    const resolvedPath = this.directoryGuard.resolveWorkingDirectory(
       targetPath,
       this.currentWorkingDirectory
     );
-
-    // Check if worktree integration is enabled and if target is a git repository
-    if (this.useWorktrees && this.isGitRepository(resolvedPath)) {
-      try {
-        // Get or create session ID if not exists
-        let sessionId = this.sessionId;
-        if (!sessionId) {
-          // Try to load from session file or get recent session
-          sessionId = await this.getRecentSessionId();
-          if (!sessionId) {
-            // Generate new session ID
-            sessionId = this.generateSessionId();
-            this.sessionId = sessionId;
-          }
-        }
-
-        // Get or create worktree for this session
-        const worktreePath = await this.worktreeManager.getOrCreateWorktree(
-          resolvedPath,
-          sessionId
-        );
-
-        console.log(`[ClaudePersistent] Using worktree: ${worktreePath}`);
-        resolvedPath = worktreePath;
-      } catch (error) {
-        // If worktree creation fails, fall back to using the original path
-        console.error('[ClaudePersistent] Failed to create worktree, using original path:', error);
-      }
-    }
 
     // If directory changes, we need to restart the process
     const needsRestart = this.currentWorkingDirectory !== resolvedPath && this.claudeProcess !== null;
@@ -334,101 +240,6 @@ export class ClaudePersistentExecutor extends EventEmitter {
   }
 
   /**
-   * Ensure current session has a corresponding worktree
-   * Should be called before executing commands to handle /clear scenarios
-   * Returns a message if user needs to set working directory, null otherwise
-   */
-  async ensureWorktree(): Promise<string | null> {
-    if (!this.useWorktrees) {
-      return null;
-    }
-
-    const currentDir = this.currentWorkingDirectory;
-
-    // Find the main repository path
-    const mainRepoPath = this.findMainRepoPath(currentDir);
-    if (!mainRepoPath) {
-      // Not in a git repository - suggest user to set working directory
-      console.log('[ClaudePersistent] Current directory is not a git repository, skipping worktree creation');
-      return `ℹ️  **Working Directory Notice**
-
-Current directory is not a git repository: \`${currentDir}\`
-
-**Options:**
-1. Continue in current directory (git worktree will be disabled)
-2. Use \`/cd <project-path>\` to switch to your git project directory
-
-💡 **Tip:** Git worktree provides session isolation - each session gets its own branch and working directory, keeping your main branch clean.`;
-    }
-
-    // Check if we're already in a worktree for this session
-    if (this.sessionId) {
-      const expectedWorktreePath = this.worktreeManager.getWorktreePath(mainRepoPath, this.sessionId);
-      if (expectedWorktreePath && currentDir === expectedWorktreePath) {
-        // Already in the correct worktree
-        return null;
-      }
-    }
-
-    // If we're in the main repo (not a worktree), create a worktree for this session
-    if (currentDir === mainRepoPath) {
-      try {
-        // Ensure we have a session ID
-        if (!this.sessionId) {
-          this.sessionId = this.generateSessionId();
-          this.saveSessionId(this.sessionId);
-        }
-
-        // Create worktree for this session
-        const worktreePath = await this.worktreeManager.getOrCreateWorktree(
-          mainRepoPath,
-          this.sessionId
-        );
-
-        console.log(`[ClaudePersistent] Created worktree for session: ${worktreePath}`);
-
-        // Switch to the new worktree
-        this.currentWorkingDirectory = worktreePath;
-        this.sessionFilePath = path.join(this.currentWorkingDirectory, '.claude-session');
-        this.saveSessionId(this.sessionId);
-
-        // Restart process if running
-        if (this.claudeProcess !== null) {
-          console.log('[ClaudePersistent] Switching to worktree, restarting process...');
-          await this.stopProcess();
-        }
-      } catch (error) {
-        console.error('[ClaudePersistent] Failed to ensure worktree:', error);
-        // Continue with current directory on failure
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Find the main repository path from current directory
-   * Returns the main repo path if current dir is within a git repo, null otherwise
-   */
-  private findMainRepoPath(currentPath: string): string | null {
-    let dir = currentPath;
-
-    // Check if we're in a worktree
-    const worktreeMatch = dir.match(/^(.+)\.worktrees\/session-[a-f0-9]{8}$/);
-    if (worktreeMatch) {
-      // We're in a worktree, extract main repo path
-      return worktreeMatch[1];
-    }
-
-    // Check if current directory is a git repository
-    if (this.isGitRepository(dir)) {
-      return dir;
-    }
-
-    return null;
-  }
-
-  /**
    * Start the persistent Claude process
    */
   private async startProcess(): Promise<void> {
@@ -439,15 +250,6 @@ Current directory is not a git repository: \`${currentDir}\`
     this.isStarting = true;
 
     try {
-      // If no session ID, try to get recent one
-      if (!this.sessionId) {
-        console.log('[ClaudePersistent] No session ID, checking for recent sessions...');
-        this.sessionId = await this.getRecentSessionId();
-        if (this.sessionId) {
-          this.saveSessionId(this.sessionId);
-        }
-      }
-
       // Build arguments
       // Note: --output-format=stream-json requires --verbose
       const args: string[] = [
@@ -1202,18 +1004,7 @@ Current directory is not a git repository: \`${currentDir}\`
       this.commandQueue.push({
         prompt,
         options,
-        resolve: (result) => {
-          // Extract and save session ID if it's a new session
-          if (!this.sessionId && result.success) {
-            const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-            const matches = result.output?.match(uuidPattern);
-            if (matches && matches.length > 0) {
-              this.sessionId = matches[0];
-              this.saveSessionId(this.sessionId);
-            }
-          }
-          resolve(result);
-        },
+        resolve,
         reject,
       });
 
@@ -1336,44 +1127,6 @@ Current directory is not a git repository: \`${currentDir}\`
 
     // Remove all listeners
     this.removeAllListeners();
-  }
-
-  /**
-   * Check if a directory is a git repository
-   * @param dirPath Directory path to check
-   * @returns true if directory contains .git
-   */
-  private isGitRepository(dirPath: string): boolean {
-    return this.worktreeManager.isGitRepository(dirPath);
-  }
-
-  /**
-   * Generate a new session ID
-   * @returns New UUID v4 session ID
-   */
-  private generateSessionId(): string {
-    // Generate UUID v4
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
-  }
-
-  /**
-   * Get worktree manager instance
-   * @returns WorktreeManager instance
-   */
-  getWorktreeManager(): WorktreeManager {
-    return this.worktreeManager;
-  }
-
-  /**
-   * Enable or disable worktree integration
-   * @param enabled Whether to enable worktree integration
-   */
-  setWorktreeEnabled(enabled: boolean): void {
-    this.useWorktrees = enabled;
   }
 
 

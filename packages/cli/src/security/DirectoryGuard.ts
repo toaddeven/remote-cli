@@ -64,11 +64,6 @@ export class DirectoryGuard {
     try {
       const normalized = this.normalizePath(targetPath, cwd);
 
-      // Check if path is a worktree of an allowed directory
-      if (this.isWorktreeOfAllowedDirectory(normalized)) {
-        return true;
-      }
-
       // Check if it's a system directory
       const systemDirs = ['/etc', '/var', '/usr', '/bin', '/sbin', '/System', '/Library', '/boot', '/dev', '/proc', '/sys'];
       if (systemDirs.some(sysDir => normalized === sysDir || normalized.startsWith(sysDir + path.sep))) {
@@ -100,31 +95,6 @@ export class DirectoryGuard {
     } catch (error) {
       return false;
     }
-  }
-
-  /**
-   * Check if path is a worktree of an allowed directory
-   * @param targetPath Normalized path to check
-   * @returns true if path is worktree of allowed directory
-   */
-  private isWorktreeOfAllowedDirectory(targetPath: string): boolean {
-    // Pattern: /path/to/allowed-dir.worktrees/session-{8-char-hex}
-    const match = targetPath.match(/^(.+)\.worktrees[/\\]session-[a-f0-9]{8}$/);
-    if (!match) {
-      return false;
-    }
-
-    const mainRepoPath = match[1];
-
-    // Check if main repo is in whitelist
-    for (const allowedDir of this.allowedDirs) {
-      const normalizedAllowedDir = this.normalizePath(allowedDir);
-      if (mainRepoPath === normalizedAllowedDir) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   /**

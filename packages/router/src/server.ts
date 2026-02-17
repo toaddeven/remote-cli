@@ -240,6 +240,7 @@ export class RouterServer {
               const responseOpenId = message.openId || message.data?.openId;
               const responseMessageId = message.messageId;
               const sessionAbbr = message.sessionAbbr || message.data?.sessionAbbr;
+              const cwd = message.cwd || message.data?.cwd;
               if (responseMessageId && responseOpenId) {
                 // Check if this was a streaming message (stream chunks were sent)
                 if (this.streamingMessages.has(responseMessageId)) {
@@ -248,7 +249,8 @@ export class RouterServer {
                     message.success ?? message.data?.success,
                     message.output || message.data?.output,
                     message.error || message.data?.error,
-                    sessionAbbr
+                    sessionAbbr,
+                    cwd
                   );
                 } else {
                   // No streaming session found - session should have been created when command was sent
@@ -511,7 +513,7 @@ export class RouterServer {
   /**
    * Finalize streaming message
    */
-  private async finalizeStreamingMessage(messageId: string, success: boolean, output?: string, error?: string, sessionAbbr?: string): Promise<void> {
+  private async finalizeStreamingMessage(messageId: string, success: boolean, output?: string, error?: string, sessionAbbr?: string, cwd?: string): Promise<void> {
     const streamData = this.streamingMessages.get(messageId);
     if (!streamData) return;
 
@@ -534,7 +536,8 @@ export class RouterServer {
           feishuMessageId,
           streamData.elements,
           sessionAbbr,
-          openId
+          openId,
+          cwd
         );
       } else {
         // Add error message to elements
