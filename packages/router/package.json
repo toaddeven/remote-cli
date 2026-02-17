@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "@koa/router": "^12.0.1",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "axios": "^1.6.7",
     "commander": "^12.0.0",
     "dotenv": "^16.4.1",
