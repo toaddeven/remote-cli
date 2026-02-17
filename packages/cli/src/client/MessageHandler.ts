@@ -614,6 +614,20 @@ You can also use natural language commands to control Claude Code CLI.`,
     content: string
   ): Promise<void> {
     try {
+      // Ensure current session has a corresponding worktree (if using ClaudePersistentExecutor)
+      if ('ensureWorktree' in this.executor && typeof this.executor.ensureWorktree === 'function') {
+        const noticeMessage = await this.executor.ensureWorktree();
+
+        // If there's a notice message (e.g., not in a git repo), send it to user
+        if (noticeMessage) {
+          this.sendResponse(messageId, {
+            success: true,
+            output: noticeMessage,
+          });
+          // Don't return - continue executing the command
+        }
+      }
+
       const result = await this.executor.execute(content, {
         onStream: (chunk: string) => {
           this.sendStreamChunk(messageId, chunk);
