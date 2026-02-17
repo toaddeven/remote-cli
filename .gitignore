@@ -8,6 +8,6 @@ dist/
 coverage/
 .vitest/
 .claude/
-.claude-session
+**/.claude-session
 packages/*/dist/
 packages/*/node_modules/
