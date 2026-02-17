@@ -701,7 +701,7 @@ export class ClaudePersistentExecutor extends EventEmitter {
                 // Send structured tool result event if callback is available
                 if (this.currentToolResultCallback) {
                   this.currentToolResultCallback({
-                    tool_use_id: block.id || 'unknown',
+                    tool_use_id: block.id || '',
                     content: block.content || '(no content)',
                     is_error: isError
                   });

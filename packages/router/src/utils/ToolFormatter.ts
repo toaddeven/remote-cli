@@ -285,7 +285,7 @@ export function createToolUseElement(toolInfo: ToolUseInfo): FeishuCardElement[]
 
   // Build header title
   let headerTitle = `<text_tag color='blue'>${emoji} TOOL USE</text_tag> · **${name}**`;
-  if (id) {
+  if (id && id !== 'unknown') {
     headerTitle += ` · \`${id.slice(0, 8)}\``;
   }
 
@@ -333,7 +333,7 @@ export function createToolResultElement(resultInfo: ToolResultInfo): FeishuCardE
 
   // Build header title with status, emoji, and tool_use_id
   let headerTitle = `<text_tag color='${statusColor}'>${statusEmoji} ${statusText}</text_tag>`;
-  if (tool_use_id) {
+  if (tool_use_id && tool_use_id !== 'unknown') {
     headerTitle += ` · \`${tool_use_id.slice(0, 8)}\``;
   }
 
