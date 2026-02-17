@@ -352,9 +352,11 @@ export class FeishuLongConnHandler {
   /**
    * Handle device command
    * Usage:
+   *   /device - List all bound devices (same as /device list)
    *   /device list - List all bound devices
-   *   /device switch <device-id> - Switch active device
-   *   /device unbind <device-id> - Unbind a specific device
+   *   /device switch <device-id|index> - Switch active device (by ID or index number)
+   *   /device <device-id|index> - Quick switch to device (by ID or index number)
+   *   /device unbind <device-id|index> - Unbind a specific device (by ID or index number)
    */
   private async handleDeviceCommand(openId: string, messageId: string, args: string[]): Promise<void> {
     try {
@@ -367,6 +369,12 @@ export class FeishuLongConnHandler {
         return;
       }
 
+      // No args - show device list
+      if (args.length === 0) {
+        await this.handleDeviceList(openId, messageId, binding);
+        return;
+      }
+
       const subcommand = args[0]?.toLowerCase();
 
       switch (subcommand) {
@@ -376,25 +384,23 @@ export class FeishuLongConnHandler {
 
         case 'switch':
           if (args.length < 2) {
-            await this.replyToMessage(messageId, '❌ Please provide device ID, format: /device switch <device-id>');
+            await this.replyToMessage(messageId, '❌ Please provide device ID or index, format: /device switch <device-id-or-index>');
             return;
           }
-          await this.handleDeviceSwitch(openId, messageId, args[1]);
+          await this.handleDeviceSwitch(openId, messageId, args[1], binding);
           break;
 
         case 'unbind':
           if (args.length < 2) {
-            await this.replyToMessage(messageId, '❌ Please provide device ID, format: /device unbind <device-id>');
+            await this.replyToMessage(messageId, '❌ Please provide device ID or index, format: /device unbind <device-id-or-index>');
             return;
           }
-          await this.handleDeviceUnbind(openId, messageId, args[1]);
+          await this.handleDeviceUnbind(openId, messageId, args[1], binding);
           break;
 
         default:
-          await this.replyToMessage(
-            messageId,
-            '❌ Unknown subcommand. Available: /device list, /device switch <device-id>, /device unbind <device-id>'
-          );
+          // If the argument looks like a number (index) or device ID, treat it as a quick switch
+          await this.handleDeviceSwitch(openId, messageId, args[0], binding);
       }
     } catch (error) {
       console.error('Error handling device command:', error);
@@ -421,25 +427,65 @@ export class FeishuLongConnHandler {
       const activeIndicator = device.isActive ? ' ⭐ ACTIVE' : '';
 
       message += `${i + 1}. **${device.deviceName}**${activeIndicator}\n`;
-      message += `   ID: ${device.deviceId}\n`;
+      message += `   ID: \`${device.deviceId}\`\n`;
       message += `   Status: ${status}\n`;
       message += `   Bound: ${new Date(device.boundAt).toLocaleString('en-US')}\n\n`;
     }
 
-    message += `\nUse /device switch <device-id> to change active device`;
+    message += `\n💡 Quick switch: /device <index> or /device <device-id>`;
+    message += `\n   Example: /device 1 or /device switch 1`;
 
     await this.replyToMessage(messageId, message);
   }
 
   /**
-   * Handle /device switch <device-id>
+   * Resolve device identifier (ID or index) to device ID
+   * @returns Resolved device ID or null if not found
    */
-  private async handleDeviceSwitch(openId: string, messageId: string, deviceId: string): Promise<void> {
+  private resolveDeviceIdentifier(identifier: string, binding: any): string | null {
+    // Try to parse as index (1-based)
+    const index = parseInt(identifier, 10);
+    if (!isNaN(index) && index > 0 && index <= binding.devices.length) {
+      return binding.devices[index - 1].deviceId;
+    }
+
+    // Treat as device ID - check if it exists
+    const device = binding.devices.find((d: any) => d.deviceId === identifier);
+    if (device) {
+      return device.deviceId;
+    }
+
+    return null;
+  }
+
+  /**
+   * Handle /device switch <device-id-or-index>
+   * Also handles quick switch: /device <device-id-or-index>
+   */
+  private async handleDeviceSwitch(openId: string, messageId: string, identifier: string, binding?: any): Promise<void> {
     try {
+      // Get binding if not provided
+      const userBinding = binding || await this.bindingManager.getUserBinding(openId);
+      if (!userBinding) {
+        await this.replyToMessage(messageId, '❌ You have not bound a device yet');
+        return;
+      }
+
+      // Resolve identifier to device ID
+      const deviceId = this.resolveDeviceIdentifier(identifier, userBinding);
+
+      if (!deviceId) {
+        await this.replyToMessage(
+          messageId,
+          `❌ Device "${identifier}" not found. Use /device to see available devices and their indices.`
+        );
+        return;
+      }
+
       const result = await this.bindingManager.switchActiveDevice(openId, deviceId);
 
       if (!result) {
-        await this.replyToMessage(messageId, '❌ Device not found or switch failed');
+        await this.replyToMessage(messageId, '❌ Device switch failed');
         return;
       }
 
@@ -451,7 +497,7 @@ export class FeishuLongConnHandler {
 
       await this.replyToMessage(
         messageId,
-        `✅ Switched to device: ${device.deviceName}\n\nDevice ID: ${device.deviceId}`
+        `✅ Switched to device: **${device.deviceName}**\n\nDevice ID: \`${device.deviceId}\``
       );
     } catch (error) {
       console.error('Error switching device:', error);
@@ -460,13 +506,29 @@ export class FeishuLongConnHandler {
   }
 
   /**
-   * Handle /device unbind <device-id>
+   * Handle /device unbind <device-id-or-index>
    */
-  private async handleDeviceUnbind(openId: string, messageId: string, deviceId: string): Promise<void> {
+  private async handleDeviceUnbind(openId: string, messageId: string, identifier: string, binding?: any): Promise<void> {
     try {
-      const devices = await this.bindingManager.getUserDevices(openId);
-      const device = devices.find(d => d.deviceId === deviceId);
+      // Get binding if not provided
+      const userBinding = binding || await this.bindingManager.getUserBinding(openId);
+      if (!userBinding) {
+        await this.replyToMessage(messageId, '❌ You have not bound a device yet');
+        return;
+      }
 
+      // Resolve identifier to device ID
+      const deviceId = this.resolveDeviceIdentifier(identifier, userBinding);
+
+      if (!deviceId) {
+        await this.replyToMessage(
+          messageId,
+          `❌ Device "${identifier}" not found. Use /device to see available devices and their indices.`
+        );
+        return;
+      }
+
+      const device = userBinding.devices.find((d: any) => d.deviceId === deviceId);
       if (!device) {
         await this.replyToMessage(messageId, '❌ Device not found');
         return;
@@ -480,13 +542,13 @@ export class FeishuLongConnHandler {
         return;
       }
 
-      let responseMessage = `✅ Device ${device.deviceName} has been unbound`;
+      let responseMessage = `✅ Device **${device.deviceName}** has been unbound`;
 
       // If we unbound the active device, inform about the new active device
       if (wasActive) {
         const newActiveDevice = await this.bindingManager.getActiveDevice(openId);
         if (newActiveDevice) {
-          responseMessage += `\n\n📱 New active device: ${newActiveDevice.deviceName}`;
+          responseMessage += `\n\n📱 New active device: **${newActiveDevice.deviceName}**`;
         } else {
           responseMessage += `\n\n⚠️ No devices remaining. Use /bind to add a new device.`;
         }
@@ -509,9 +571,11 @@ Available commands:
 /bind <binding-code> - Bind a new device
 /status - View all device statuses
 /unbind - Unbind all devices
+/device - List all your devices
 /device list - List all your devices
-/device switch <device-id> - Switch active device
-/device unbind <device-id> - Unbind a specific device
+/device switch <device-id-or-index> - Switch active device
+/device <device-id-or-index> - Quick switch to device
+/device unbind <device-id-or-index> - Unbind a specific device
 /help - Show help information
 
 Regular messages will be sent to your active device for execution.
@@ -520,9 +584,14 @@ Multi-device support:
 • You can bind multiple devices to your account
 • Only one device is active at a time
 • Commands are sent to the active device
-• Use /device switch to change active device
+• Use /device or /device list to see your devices
+• Switch by index: /device 1 or /device switch 2
+• Switch by ID: /device <device-id>
 
 Examples:
+• "/device" - List all devices
+• "/device 1" - Switch to device #1
+• "/device switch 2" - Switch to device #2
 • "List files in current directory"
 • "Run tests"
 • "View recent git commits"`;
