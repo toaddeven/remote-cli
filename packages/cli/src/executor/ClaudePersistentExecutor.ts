@@ -1081,20 +1081,15 @@ export class ClaudePersistentExecutor extends EventEmitter {
 
   /**
    * Reset execution context
+   * Clears the session ID to start a fresh conversation on next command.
+   * Does NOT stop the process - the process continues running and will
+   * create a new session automatically when the next command is executed.
    */
   resetContext(): void {
     console.log('[ClaudePersistent] Resetting session context');
     this.sessionId = null;
 
-    // Stop current process
-    this.stopProcess();
-
-    // Clear queue
-    this.commandQueue = [];
-    this.resetCurrentCommand();
-    this.isProcessing = false;
-
-    // Remove session file
+    // Remove session file so a new session will be created on next command
     try {
       if (fs.existsSync(this.sessionFilePath)) {
         fs.unlinkSync(this.sessionFilePath);
@@ -1103,6 +1098,10 @@ export class ClaudePersistentExecutor extends EventEmitter {
     } catch (error) {
       console.error('[ClaudePersistent] Failed to remove session file:', error);
     }
+
+    // Note: We intentionally do NOT stop the process here.
+    // The process keeps running, and on the next command it will
+    // start a new session automatically (since sessionId is null).
   }
 
   /**
