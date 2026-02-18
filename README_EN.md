@@ -115,19 +115,122 @@ Before you begin, ensure you have:
 
 > **Note**: Most users don't need to deploy the router server. Your team administrator should deploy one router server for the entire team to share.
 
-See [Router Deployment Guide](#router-deployment) for detailed instructions.
+The router server forwards messages between Feishu and local CLI clients.
 
-Quick deployment:
+### Prerequisites
+
+- A server with at least **1 CPU core** and **1GB RAM**
+- **Node.js** >= 18.0.0
+- **Domain name** and SSL certificate (for public deployment with HTTPS)
+- A **Feishu bot** created and configured
+
+### Install Router Server
 
 ```bash
-# Install router server
+# Install from npm (recommended)
 npm install -g @yu_robotics/remote-cli-router
 
-# Configure
-remote-cli-router config
+# Or install from source
+git clone <repository-url>
+cd remote-cli
+npm install
+npm run build -w @yu_robotics/remote-cli-router
+cd packages/router
+npm link
+```
 
-# Start
+### Configure Router Server
+
+```bash
+remote-cli-router config
+```
+
+You will be prompted for:
+- **Feishu App ID** (required)
+- **Feishu App Secret** (required)
+- Feishu Encrypt Key (optional)
+- Feishu Verification Token (optional)
+- Server Port (default: 3000)
+
+### Setup Feishu Bot
+
+1. Go to [Feishu Open Platform](https://open.feishu.cn/)
+2. Create a new app
+3. Enable **Bot** capabilities
+4. Configure permissions:
+   | Permission | Description | API Scope |
+   |------------|-------------|-----------|
+   | 获取与发送单聊、群组消息 | Get and send single/group messages | `im:message` |
+   | 读取用户发给机器人的单聊消息 | Read user's private messages to bot | `im:message.p2p_msg:readonly` |
+   | 以应用的身份发消息 | Send messages as bot | `im:message:send_as_bot` |
+5. Enable **Long Connection** in Event & Callback section
+6. Subscribe to event: `im.message.receive_v1` ([Receive Message v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
+7. Configure webhook URL: `https://your-domain.com/webhook/feishu`
+8. Get credentials (App ID, App Secret) and publish the app
+
+### Start Router Server
+
+```bash
+# Start the service
 remote-cli-router start
+
+# Or use PM2 for production
+pm2 start remote-cli-router --name router -- start
+```
+
+### Nginx Configuration (Production)
+
+If using a domain with HTTPS, configure Nginx as a reverse proxy:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+
+    ssl_certificate /path/to/ssl/cert.pem;
+    ssl_certificate_key /path/to/ssl/key.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /ws {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+}
+```
+
+### Client Server Address Guide
+
+When initializing the client, you need to specify the router server address. The address format depends on your deployment method:
+
+| Deployment | Server Address Example | Description |
+|-----------|----------------------|-------------|
+| **Local/Intranet** | `http://127.0.0.1:3000` | Router and client on same machine |
+| **LAN** | `http://192.168.1.100:3000` | Use internal IP + port |
+| **Public** | `https://your-domain.com` | Use domain with HTTPS |
+
+**Initialization examples:**
+
+```bash
+# Local deployment
+remote-cli init --server http://127.0.0.1:3000
+
+# LAN deployment
+remote-cli init --server http://192.168.1.100:3000
+
+# Public deployment
+remote-cli init --server https://your-domain.com
 ```
 
 ## Installation
@@ -356,95 +459,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## Detailed Documentation
-
-### Router Deployment
-
-The router server manages message forwarding between Feishu and local clients.
-
-#### Prerequisites
-
-- A cloud server with at least **1 CPU core** and **1GB RAM**
-- **Node.js** >= 18.0.0
-- **A domain name** with SSL certificate (HTTPS required)
-- **Feishu bot** created and configured
-
-#### Installation
-
-```bash
-# Clone repository (replace with actual repository URL)
-git clone <repository-url>
-cd remote-cli
-
-# Install dependencies
-npm install
-
-# Build router
-npm run build -w @yu_robotics/remote-cli-router
-
-# Link globally
-cd packages/router
-npm link
-```
-
-#### Configuration
-
-```bash
-remote-cli-router config
-```
-
-You will be prompted for:
-- **Feishu App ID** (required)
-- **Feishu App Secret** (required)
-- Feishu Encrypt Key (optional)
-- Feishu Verification Token (optional)
-- Server Port (default: 3000)
-
-#### Setup Feishu Bot
-
-1. Go to [Feishu Open Platform](https://open.feishu.cn/)
-2. Create a new app
-3. Enable **Bot** capabilities
-4. Configure permissions (权限管理):
-   | Permission | Description | API Scope |
-   |------------|-------------|-----------|
-   | 获取与发送单聊、群组消息 | Get and send single/group messages | `im:message` |
-   | 读取用户发给机器人的单聊消息 | Read user's private messages to bot | `im:message.p2p_msg:readonly` |
-   | 以应用的身份发消息 | Send messages as bot | `im:message:send_as_bot` |
-5. Enable **Long Connection** (长连接) in Event & Callback section
-6. Subscribe to event: `im.message.receive_v1` ([Receive Message v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
-7. Configure webhook URL: `https://your-domain.com/webhook/feishu`
-8. Get credentials (App ID, App Secret) and publish the app
-
-#### Nginx Configuration
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-
-    ssl_certificate /path/to/ssl/cert.pem;
-    ssl_certificate_key /path/to/ssl/key.pem;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location /ws {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "Upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 86400;
-    }
-}
-```
+## Appendix
 
 ### Configuration Reference
 

@@ -114,19 +114,122 @@ remote-cli start
 
 > **注意**：大多数用户不需要部署路由服务器。团队管理员应该部署一个路由服务器供整个团队共享。
 
-详见下方的[路由部署指南](#路由部署指南)。
+路由服务器负责在飞书和本地客户端之间转发消息。
 
-快速部署：
+### 环境要求
+
+- 至少 **1 核 CPU** 和 **1GB 内存** 的服务器
+- **Node.js** >= 18.0.0
+- **域名**和 SSL 证书（需要 HTTPS）用于公网部署
+- 已创建和配置的**飞书机器人**
+
+### 安装路由服务器
 
 ```bash
-# 安装路由服务器
+# 从 npm 安装（推荐）
 npm install -g @yu_robotics/remote-cli-router
 
-# 配置
-remote-cli-router config
+# 或从源码安装
+git clone <repository-url>
+cd remote-cli
+npm install
+npm run build -w @yu_robotics/remote-cli-router
+cd packages/router
+npm link
+```
 
-# 启动
+### 配置路由服务器
+
+```bash
+remote-cli-router config
+```
+
+你将需要输入：
+- **飞书 App ID**（必需）
+- **飞书 App Secret**（必需）
+- 飞书 Encrypt Key（可选）
+- 飞书 Verification Token（可选）
+- 服务器端口（默认：3000）
+
+### 设置飞书机器人
+
+1. 访问[飞书开放平台](https://open.feishu.cn/)
+2. 创建新应用
+3. 启用**机器人**能力
+4. 配置权限（权限管理）：
+   | 权限 | 说明 | API Scope |
+   |------|------|-----------|
+   | 获取与发送单聊、群组消息 | 获取和发送单聊、群组消息 | `im:message` |
+   | 读取用户发给机器人的单聊消息 | 读取用户发给机器人的单聊消息 | `im:message.p2p_msg:readonly` |
+   | 以应用的身份发消息 | 以应用的身份发送消息 | `im:message:send_as_bot` |
+5. 在**事件与回调**部分开启**长连接**
+6. 订阅事件：`im.message.receive_v1` ([接收消息 v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
+7. 配置 webhook URL：`https://your-domain.com/webhook/feishu`
+8. 获取凭证（App ID、App Secret）并发布应用
+
+### 启动路由服务器
+
+```bash
+# 启动服务
 remote-cli-router start
+
+# 或使用 PM2 在生产环境运行
+pm2 start remote-cli-router --name router -- start
+```
+
+### Nginx 配置（生产环境）
+
+如果使用域名和 HTTPS，需要配置 Nginx 反向代理：
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+
+    ssl_certificate /path/to/ssl/cert.pem;
+    ssl_certificate_key /path/to/ssl/key.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /ws {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+}
+```
+
+### 客户端连接地址说明
+
+客户端初始化时需要指定路由服务器地址，根据部署方式不同：
+
+| 部署方式 | 服务器地址示例 | 说明 |
+|---------|--------------|------|
+| **本地/内网部署** | `http://127.0.0.1:3000` | 路由服务器和客户端在同一台机器 |
+| **局域网部署** | `http://192.168.1.100:3000` | 使用内网 IP + 端口 |
+| **公网部署** | `https://your-domain.com` | 使用域名，需配置 HTTPS |
+
+**初始化示例：**
+
+```bash
+# 本地部署
+remote-cli init --server http://127.0.0.1:3000
+
+# 局域网部署
+remote-cli init --server http://192.168.1.100:3000
+
+# 公网部署
+remote-cli init --server https://your-domain.com
 ```
 
 ## 安装
@@ -355,95 +458,7 @@ MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
 
 ---
 
-## 详细文档
-
-### 路由部署指南
-
-路由服务器负责在飞书和本地客户端之间转发消息。
-
-#### 环境要求
-
-- 至少 **1 核 CPU** 和 **1GB 内存** 的云服务器
-- **Node.js** >= 18.0.0
-- **域名**和 SSL 证书（需要 HTTPS）
-- 已创建和配置的**飞书机器人**
-
-#### 安装
-
-```bash
-# 克隆仓库（请替换为实际的仓库地址）
-git clone <repository-url>
-cd remote-cli
-
-# 安装依赖
-npm install
-
-# 构建路由服务器
-npm run build -w @yu_robotics/remote-cli-router
-
-# 全局链接
-cd packages/router
-npm link
-```
-
-#### 配置
-
-```bash
-remote-cli-router config
-```
-
-你将需要输入：
-- **飞书 App ID**（必需）
-- **飞书 App Secret**（必需）
-- 飞书 Encrypt Key（可选）
-- 飞书 Verification Token（可选）
-- 服务器端口（默认：3000）
-
-#### 设置飞书机器人
-
-1. 访问[飞书开放平台](https://open.feishu.cn/)
-2. 创建新应用
-3. 启用**机器人**能力
-4. 配置权限（权限管理）：
-   | 权限 | 说明 | API Scope |
-   |------|------|-----------|
-   | 获取与发送单聊、群组消息 | 获取和发送单聊、群组消息 | `im:message` |
-   | 读取用户发给机器人的单聊消息 | 读取用户发给机器人的单聊消息 | `im:message.p2p_msg:readonly` |
-   | 以应用的身份发消息 | 以应用的身份发送消息 | `im:message:send_as_bot` |
-5. 在**事件与回调**部分开启**长连接**
-6. 订阅事件：`im.message.receive_v1` ([接收消息 v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
-7. 配置 webhook URL：`https://your-domain.com/webhook/feishu`
-8. 获取凭证（App ID、App Secret）并发布应用
-
-#### Nginx 配置
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-
-    ssl_certificate /path/to/ssl/cert.pem;
-    ssl_certificate_key /path/to/ssl/key.pem;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location /ws {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "Upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 86400;
-    }
-}
-```
+## 附录
 
 ### 配置参考
 
