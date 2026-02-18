@@ -19,10 +19,12 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 
 ### Usage Examples
 
-<p align="center">
-  <img src="example_0.jpg" alt="Usage Example 1" width="45%" />
-  <img src="example_1.jpg" alt="Usage Example 2" width="45%" />
-</p>
+<table>
+  <tr>
+    <td><img src="example_0.jpg" alt="Usage Example 1" height="400" /></td>
+    <td><img src="example_1.jpg" alt="Usage Example 2" height="400" /></td>
+  </tr>
+</table>
 
 ## Recommended Use Cases
 

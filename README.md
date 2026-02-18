@@ -19,10 +19,12 @@
 
 ### 使用示例
 
-<p align="center">
-  <img src="example_0.jpg" alt="使用示例 1" width="45%" />
-  <img src="example_1.jpg" alt="使用示例 2" width="45%" />
-</p>
+<table>
+  <tr>
+    <td><img src="example_0.jpg" alt="使用示例 1" height="400" /></td>
+    <td><img src="example_1.jpg" alt="使用示例 2" height="400" /></td>
+  </tr>
+</table>
 
 ## 推荐使用场景
 
