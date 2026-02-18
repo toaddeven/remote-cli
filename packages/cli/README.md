@@ -69,14 +69,28 @@ Help me fix TypeScript errors in ~/projects/my-app
 
 ## Feishu Bot Commands
 
+### Device Management
+
 | Command | Description |
 |---------|-------------|
-| `/cd <path>` | Change working directory |
-| `/status` | Check connection status |
-| `/c` or `/continue` | Continue previous conversation |
-| `/r` or `/resume` | Resume from last session |
-| `/clear` | Clear current session |
-| `/help` | Show help |
+| `/bind <binding-code>` | Bind a new device |
+| `/status` | View status of all devices |
+| `/unbind` | Unbind all devices |
+| `/device` | List all your bound devices |
+| `/device list` | List all your bound devices |
+| `/device switch <device-id-or-index>` | Switch to a specific device |
+| `/device <device-id-or-index>` | Quick switch to a device |
+| `/device unbind <device-id-or-index>` | Unbind a specific device |
+| `/help` | Show help information |
+
+### Claude Code Commands
+
+All commands/skills supported by local Claude Code are passed through directly, for example:
+- `/commit` - Commit code changes
+- `/review` - Code review
+- `/test` - Run tests
+- `/clear` - Clear current session
+- And all other built-in Claude Code commands
 
 ## Security
 

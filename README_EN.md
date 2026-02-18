@@ -212,36 +212,58 @@ remote-cli stop
 
 Once connected, use these commands in Feishu:
 
+### Device Management Commands
+
 | Command | Description |
 |---------|-------------|
-| `/cd <directory>` | Change working directory |
-| `/c` or `/continue` | Continue previous conversation |
-| `/r` or `/resume` | Resume from last session |
-| `/clear` | Clear current session |
-| `/status` | View device status and current directory |
-| `/help` | Show available commands |
+| `/bind <binding-code>` | Bind a new device |
+| `/status` | View status of all devices |
+| `/unbind` | Unbind all devices |
+| `/device` | List all your bound devices |
+| `/device list` | List all your bound devices |
+| `/device switch <device-id-or-index>` | Switch to a specific device |
+| `/device <device-id-or-index>` | Quick switch to a device |
+| `/device unbind <device-id-or-index>` | Unbind a specific device |
+| `/help` | Show help information |
+
+### Claude Code Commands Passthrough
+
+All commands/skills supported by local Claude Code are passed through directly, for example:
+- `/commit` - Commit code changes
+- `/review` - Code review
+- `/test` - Run tests
+- `/clear` - Clear current session
+- And all other built-in Claude Code commands
 
 ### Example Workflow
 
-1. **Switch to your project:**
+1. **Bind a new device:**
    ```
-   /cd ~/projects/my-app
+   /bind ABC-123-XYZ
    ```
 
-2. **Ask Claude Code to help:**
+2. **Check device status:**
+   ```
+   /status
+   ```
+
+3. **Switch to a specific device:**
+   ```
+   /device switch dev_darwin_a1b2c3d4
+   ```
+   Or use index for quick switch:
+   ```
+   /device 1
+   ```
+
+4. **Ask Claude Code to help:**
    ```
    Review the authentication code in src/auth.ts and suggest improvements
    ```
 
-3. **Continue the conversation:**
+5. **Use Claude Code built-in commands:**
    ```
-   /c
-   Now implement those improvements
-   ```
-
-4. **Run tests:**
-   ```
-   Run the test suite and fix any failures
+   /commit
    ```
 
 ## Security
