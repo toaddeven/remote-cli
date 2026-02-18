@@ -8,6 +8,15 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 
 [中文文档](README.md)
 
+## Features
+
+- 🌍 **Remote Control**: Control your local development environment from anywhere via mobile phone
+- 🔒 **Secure**: Directory whitelisting, command filtering, and device authentication
+- 📱 **Mobile-Optimized**: Simplified commands and rich text formatting for Feishu
+- 🤖 **Claude Code Integration**: Full access to Claude Code's capabilities and context
+- ⚡ **Persistent Process**: Long-running Claude process with bidirectional streaming via stdio
+- 🚀 **Easy Setup**: One-command installation and initialization
+
 ## Recommended Use Cases
 
 ### Scenario 1: Enterprise Teams (Intranet Deployment)
@@ -39,15 +48,6 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 - 📱 **Access Anywhere**: Control your home computer from your phone via Feishu when you're out
 - 💡 **Development Convenience**: Continue programming, check logs, and fix issues when temporarily away from your computer
 - 🆓 **Completely Free**: No need to purchase cloud servers; utilize existing equipment
-
-## Features
-
-- 🌍 **Remote Control**: Control your local development environment from anywhere via mobile phone
-- 🔒 **Secure**: Directory whitelisting, command filtering, and device authentication
-- 📱 **Mobile-Optimized**: Simplified commands and rich text formatting for Feishu
-- 🤖 **Claude Code Integration**: Full access to Claude Code's capabilities and context
-- ⚡ **Persistent Process**: Long-running Claude process with bidirectional streaming via stdio
-- 🚀 **Easy Setup**: One-command installation and initialization
 
 ## Architecture
 
