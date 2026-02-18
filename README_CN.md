@@ -30,7 +30,6 @@
 - 📱 **移动优化**：为飞书定制的简化命令和富文本格式
 - 🤖 **Claude Code 集成**：完整使用 Claude Code 的能力和上下文
 - ⚡ **持久进程**：通过 stdio 双向流保持 Claude 进程长期运行
-- 🌳 **Git Worktree 支持**：每个会话使用独立工作区，保持主分支干净
 - 🚀 **简单 setup**：一键安装和初始化
 
 ## 快速开始
@@ -169,9 +168,6 @@ remote-cli stop
 | `/r` 或 `/resume` | 恢复上一个会话 |
 | `/clear` | 清除当前会话 |
 | `/status` | 查看设备状态和当前目录 |
-| `/main` 或 `/reset` | 返回主仓库目录 |
-| `/worktree list` | 显示所有 worktree |
-| `/worktree cleanup [天数]` | 删除旧的 worktree（默认：7 天） |
 | `/help` | 显示可用命令 |
 
 ### 示例工作流程
@@ -426,11 +422,6 @@ server {
     "running": true,
     "startedAt": 1234567890,
     "pid": 12345
-  },
-  "worktree": {
-    "enabled": true,
-    "baseBranch": "main",
-    "autoCleanupDays": 7
   }
 }
 ```

@@ -30,7 +30,6 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 - 📱 **Mobile-Optimized**: Simplified commands and rich text formatting for Feishu
 - 🤖 **Claude Code Integration**: Full access to Claude Code's capabilities and context
 - ⚡ **Persistent Process**: Long-running Claude process with bidirectional streaming via stdio
-- 🌳 **Git Worktree Support**: Isolated workspaces for each session to keep main branch clean
 - 🚀 **Easy Setup**: One-command installation and initialization
 
 ## Quick Start
@@ -169,9 +168,6 @@ Once connected, use these commands in Feishu:
 | `/r` or `/resume` | Resume from last session |
 | `/clear` | Clear current session |
 | `/status` | View device status and current directory |
-| `/main` or `/reset` | Return to main repository directory |
-| `/worktree list` | Show all worktrees |
-| `/worktree cleanup [days]` | Remove old worktrees (default: 7 days) |
 | `/help` | Show available commands |
 
 ### Example Workflow
@@ -427,11 +423,6 @@ server {
     "running": true,
     "startedAt": 1234567890,
     "pid": 12345
-  },
-  "worktree": {
-    "enabled": true,
-    "baseBranch": "main",
-    "autoCleanupDays": 7
   }
 }
 ```

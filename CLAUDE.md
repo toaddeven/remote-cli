@@ -147,68 +147,6 @@ The security model has **three layers**:
 2. **Command filtering**: `CommandFilter` blocks dangerous bash commands (planned, not yet implemented)
 3. **Device authentication**: Router server binds devices to specific users via Feishu binding flow
 
-### Git Worktree Integration
-
-**Problem**: When modifying code through remote sessions, changes are made directly on the main branch, which can:
-- Pollute the main branch with experimental or incomplete code
-- Create conflicts if the user is also working locally
-- Make it difficult to abandon or rollback failed experiments
-- Mix multiple concurrent tasks in the same workspace
-
-**Solution**: Use git worktrees to create isolated workspaces for each Claude Code session.
-
-**How it works:**
-1. Each session gets its own git worktree and branch (`remote-cli/session-{sessionId}`)
-2. Worktrees are created in a sibling directory: `{project}.worktrees/session-{sessionId}`
-3. All changes happen in isolated branches, keeping main branch clean
-4. Sessions can be resumed or abandoned without affecting other work
-
-**Key features:**
-- **Automatic creation**: Worktrees are created lazily on first command execution for each session
-- **Session isolation**: Each session works in its own branch and directory
-- **Security integration**: Worktree paths are automatically validated by DirectoryGuard
-- **Manual cleanup**: Worktrees persist until explicitly removed via slash commands
-
-**Directory structure:**
-```
-/Users/dev/my-project/              # Main repository (whitelisted)
-├── .git/
-├── .claude-session
-└── src/
-
-/Users/dev/my-project.worktrees/    # Worktrees container
-├── session-a3b4c5d6/               # Session 1 worktree
-│   ├── .git -> ../my-project/.git/worktrees/session-a3b4c5d6
-│   ├── .claude-session
-│   └── src/
-└── session-b7c8d9e0/               # Session 2 worktree
-    └── ...
-```
-
-**Slash commands:**
-- `/worktree list` - Show all worktrees for current repository
-- `/worktree cleanup [days]` - Remove worktrees older than N days (default: 7)
-- `/worktree remove <session-id>` - Remove specific worktree
-- `/main` or `/reset` - Return to main repository working directory
-
-**Configuration:**
-```bash
-# Enable/disable worktree integration (default: enabled)
-remote-cli config worktree.enabled true
-
-# Set base branch for worktrees (default: 'main')
-remote-cli config worktree.baseBranch main
-
-# Set auto-cleanup threshold in days (0 = never, default: 0)
-remote-cli config worktree.autoCleanupDays 7
-```
-
-**Implementation details:**
-- `WorktreeManager` (`packages/cli/src/worktree/WorktreeManager.ts`) handles all worktree operations
-- `ClaudeExecutor` and `ClaudePersistentExecutor` integrate worktree support via `setWorkingDirectory()`
-- `DirectoryGuard` validates worktree paths pattern: `{allowedDir}.worktrees/session-[a-f0-9]{8}`
-- Session IDs are stored in `.claude-session` files in each worktree
-
 ## Key Implementation Patterns
 
 ### Message Flow
@@ -249,7 +187,6 @@ packages/cli/src/
   security/      # Directory guard (CommandFilter planned, not yet implemented)
   types/         # TypeScript type definitions
   utils/         # Utility functions (FeishuMessageFormatter, stripAnsi)
-  worktree/      # Git worktree management (WorktreeManager)
 
 packages/router/src/
   binding/       # User-device binding management (BindingManager)
@@ -268,7 +205,6 @@ packages/cli/tests/
   *.test.ts              # Unit tests (named after source file)
   commands/              # Command-specific tests
   integration/           # Full workflow integration tests
-  worktree/              # Worktree feature tests
 
 packages/router/tests/
   *.test.ts              # Unit tests for router components

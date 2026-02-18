@@ -9,7 +9,6 @@ Remote control your [Claude Code](https://claude.ai/code) CLI from anywhere usin
 - **Mobile-Optimized**: Simplified commands and rich text formatting for Feishu
 - **Claude Code Integration**: Full access to Claude Code's capabilities and context
 - **Persistent Process**: Long-running Claude process with bidirectional streaming (no repeated spawn overhead)
-- **Git Worktree Isolation**: Each session works in its own git branch and directory, keeping main branch clean
 
 ## Prerequisites
 
@@ -77,56 +76,7 @@ Help me fix TypeScript errors in ~/projects/my-app
 | `/c` or `/continue` | Continue previous conversation |
 | `/r` or `/resume` | Resume from last session |
 | `/clear` | Clear current session |
-| `/main` or `/reset` | Return to main repository (exit worktree) |
-| `/worktree list` | Show all worktrees |
-| `/worktree cleanup [days]` | Remove worktrees older than N days (default: 7) |
-| `/worktree remove <session-id>` | Remove specific worktree |
 | `/help` | Show help |
-
-## Git Worktree Integration
-
-Each Claude Code session automatically creates an isolated git worktree to keep your main branch clean:
-
-**Benefits:**
-- Changes are made in separate branches (`remote-cli/session-{id}`)
-- Experiments can be abandoned without affecting main
-- Multiple sessions can work concurrently
-- Easy to review changes before merging
-
-**How it works:**
-```
-/Users/dev/my-project/           # Main repo (whitelisted)
-/Users/dev/my-project.worktrees/
-  ├── session-a3b4c5d6/          # Session 1
-  └── session-b7c8d9e0/          # Session 2
-```
-
-**Configuration:**
-```bash
-# Enable/disable (default: enabled)
-remote-cli config worktree.enabled true
-
-# Base branch (default: 'main')
-remote-cli config worktree.baseBranch main
-
-# Auto-cleanup after N days (0 = disabled, default: 0)
-remote-cli config worktree.autoCleanupDays 7
-```
-
-**Usage via Feishu:**
-```
-# Work normally - worktree created automatically
-Fix the login bug in ~/projects/myapp
-
-# List all worktrees
-/worktree list
-
-# Return to main when done
-/main
-
-# Cleanup old worktrees
-/worktree cleanup 7
-```
 
 ## Security
 
