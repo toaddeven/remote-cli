@@ -1,383 +1,382 @@
-# Remote CLI - Control Claude Code from Mobile via Feishu
+# Remote CLI - 通过飞书远程控制 Claude Code
 
 [![npm version](https://img.shields.io/npm/v/@yu_robotics/remote-cli.svg)](https://www.npmjs.com/package/@yu_robotics/remote-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 
-Remote control your Claude Code CLI from anywhere using your mobile phone through Feishu (Lark) messaging. Continue coding when away from your computer with a mobile-friendly interface.
+通过飞书（Lark）消息从手机上远程控制你的 Claude Code CLI。即使不在电脑前，也能继续编程。
 
-[中文文档](README_CN.md)
+[English Documentation](README_EN.md)
 
-## Table of Contents
+## 目录
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Slash Commands](#slash-commands)
-- [Security](#security)
-- [Router Server Deployment](#router-server-deployment)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
+- [功能特性](#功能特性)
+- [快速开始](#快速开始)
+- [环境要求](#环境要求)
+- [安装](#安装)
+- [使用方法](#使用方法)
+- [快捷命令](#快捷命令)
+- [安全机制](#安全机制)
+- [系统架构](#系统架构)
+- [路由服务器部署](#路由服务器部署)
+- [常见问题](#常见问题)
+- [贡献指南](#贡献指南)
+- [许可证](#许可证)
 
-## Features
+## 功能特性
 
-- 🌍 **Remote Control**: Control your local development environment from anywhere via mobile phone
-- 🔒 **Secure**: Directory whitelisting, command filtering, and device authentication
-- 📱 **Mobile-Optimized**: Simplified commands and rich text formatting for Feishu
-- 🤖 **Claude Code Integration**: Full access to Claude Code's capabilities and context
-- ⚡ **Persistent Process**: Long-running Claude process with bidirectional streaming via stdio
-- 🚀 **Easy Setup**: One-command installation and initialization
+- 🌍 **远程控制**：通过手机随时随地控制本地开发环境
+- 🔒 **安全可靠**：目录白名单、命令过滤、设备认证三重保护
+- 📱 **移动优化**：为飞书定制的简化命令和富文本格式
+- 🤖 **Claude Code 集成**：完整使用 Claude Code 的能力和上下文
+- ⚡ **持久进程**：通过 stdio 双向流保持 Claude 进程长期运行
+- 🚀 **简单 setup**：一键安装和初始化
 
-## Architecture
-
-```
-┌─────────────────┐         ┌──────────────────────────────┐
-│  Feishu Server  │         │  Developer A's Work PC       │
-│                 │         │  (Mac/Linux)                 │
-│  Developer A's  │◀───────▶│  ┌─────────────────────────┐ │
-│  Phone          │         │  │  remote-cli (local)     │ │
-│  Private Chat   │         │  │  - WebSocket Client     │ │
-│  with Bot       │         │  │  - Claude Code Executor │ │
-└─────────────────┘         │  │  - Security Directory   │ │
-        │                   │  │    Guard                │ │
-        │                   │  └──────────┬──────────────┘ │
-        │                   │             ▼                 │
-        │                   │  Local Claude Code CLI        │
-        ▼                   │  (Using Agent SDK)            │
-┌─────────────────┐         └──────────────────────────────┘
-│  Router Server  │
-│  (Team Deploy)  │         ┌──────────────────────────────┐
-│  ┌───────────┐  │         │  Developer B's Work PC       │
-│  │ Webhook   │  │         │  ┌─────────────────────────┐ │
-│  │ Handler   │  │◀───────▶│  │  remote-cli (local)     │ │
-│  └───────────┘  │         │  └─────────────────────────┘ │
-│  ┌───────────┐  │         └──────────────────────────────┘
-│  │WebSocket  │  │
-│  │   Hub     │  │
-│  └───────────┘  │
-│  ┌───────────┐  │
-│  │  Binding  │  │
-│  │  Registry │  │
-│  └───────────┘  │
-└─────────────────┘
-```
-
-## Quick Start
+## 快速开始
 
 ```bash
-# Install the CLI
+# 安装 CLI
 npm install -g @yu_robotics/remote-cli
 
-# Initialize and get binding code
+# 初始化并获取绑定码
 remote-cli init --server https://your-router-server.com
 
-# Add allowed directories
+# 添加允许的目录
 remote-cli config add-dir ~/projects
 
-# Start the service
+# 启动服务
 remote-cli start
 
-# Now send the binding code to your Feishu bot
-# And start coding from your phone!
+# 现在将绑定码发送给飞书机器人
+# 然后就可以用手机开始编程了！
 ```
 
-## Prerequisites
+## 环境要求
 
-Before you begin, ensure you have:
+开始前，请确保你已安装：
 
 - **Node.js** >= 18.0.0
-- **npm** or **yarn** package manager
-- **Claude Code CLI** installed and configured
-- Access to a **Feishu (Lark) bot** (your team should deploy a router server)
+- **npm** 或 **yarn** 包管理器
+- **Claude Code CLI** 并已配置
+- 可访问的**飞书机器人**（团队应部署一个路由服务器）
 
-## Installation
+## 安装
 
-### From npm (Recommended)
+### 从 npm 安装（推荐）
 
 ```bash
 npm install -g @yu_robotics/remote-cli
 ```
 
-Or using yarn:
+或使用 yarn：
 
 ```bash
 yarn global add @yu_robotics/remote-cli
 ```
 
-### From Source
+### 从源码安装
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone https://github.com/xiaoyu/remote-cli.git
 cd remote-cli
 
-# Install dependencies
+# 安装依赖
 npm install
 
-# Build all packages
+# 构建所有包
 npm run build
 
-# Link the CLI globally
+# 全局链接 CLI
 cd packages/cli
 npm link
 ```
 
-## Usage
+## 使用方法
 
-### 1. Initialize
+### 1. 初始化
 
-Generate a unique device ID and binding code:
+生成唯一的设备 ID 和绑定码：
 
 ```bash
 remote-cli init --server https://your-router-server.com
 ```
 
-Example output:
+示例输出：
 ```
 ✔ Initializing remote CLI...
 ✔ Device ID: dev_darwin_a1b2c3d4e5f6
 ✔ Binding code: ABC-123-XYZ
 
-Please bind your device in Feishu:
-1. Open Feishu and find the bot
-2. Send: /bind ABC-123-XYZ
-3. Wait for confirmation
+请在飞书中绑定设备：
+1. 打开飞书，找到机器人
+2. 发送：/bind ABC-123-XYZ
+3. 等待确认
 
-Binding code expires in 5 minutes.
+绑定码将在 5 分钟后过期。
 ```
 
-### 2. Bind Device in Feishu
+### 2. 在飞书中绑定设备
 
-Open your Feishu app and send the binding code to the bot:
+打开飞书应用，向机器人发送绑定码：
 
 ```
 /bind ABC-123-XYZ
 ```
 
-### 3. Configure Security
+### 3. 配置安全设置
 
-Add allowed directories where Claude Code can operate:
+添加允许 Claude Code 操作的目录：
 
 ```bash
-# Add a single directory
+# 添加单个目录
 remote-cli config add-dir ~/projects
 
-# Add multiple directories
+# 添加多个目录
 remote-cli config add-dir ~/work ~/code/company-repos
 
-# View current configuration
+# 查看当前配置
 remote-cli config show
 ```
 
-### 4. Start Service
+### 4. 启动服务
 
 ```bash
 remote-cli start
 ```
 
-### 5. Check Status
+### 5. 查看状态
 
 ```bash
 remote-cli status
 ```
 
-### 6. Stop Service
+### 6. 停止服务
 
 ```bash
 remote-cli stop
 ```
 
-## Slash Commands
+## 快捷命令
 
-Once connected, use these commands in Feishu:
+连接后，在飞书中可以使用以下命令：
 
-| Command | Description |
+| 命令 | 说明 |
 |---------|-------------|
-| `/cd <directory>` | Change working directory |
-| `/c` or `/continue` | Continue previous conversation |
-| `/r` or `/resume` | Resume from last session |
-| `/clear` | Clear current session |
-| `/status` | View device status and current directory |
-| `/help` | Show available commands |
+| `/cd <目录>` | 切换工作目录 |
+| `/c` 或 `/continue` | 继续上一次的对话 |
+| `/r` 或 `/resume` | 恢复上一个会话 |
+| `/clear` | 清除当前会话 |
+| `/status` | 查看设备状态和当前目录 |
+| `/help` | 显示可用命令 |
 
-### Example Workflow
+### 示例工作流程
 
-1. **Switch to your project:**
+1. **切换到项目：**
    ```
    /cd ~/projects/my-app
    ```
 
-2. **Ask Claude Code to help:**
+2. **让 Claude Code 帮忙：**
    ```
-   Review the authentication code in src/auth.ts and suggest improvements
+   审查 src/auth.ts 中的认证代码并提出改进建议
    ```
 
-3. **Continue the conversation:**
+3. **继续对话：**
    ```
    /c
-   Now implement those improvements
+   现在实现这些改进
    ```
 
-4. **Run tests:**
+4. **运行测试：**
    ```
-   Run the test suite and fix any failures
+   运行测试套件并修复失败的测试
    ```
 
-## Security
+## 安全机制
 
-### Directory Whitelisting
+### 目录白名单
 
-Only directories explicitly added to the whitelist are accessible:
+只有显式添加到白名单的目录才能访问：
 
 ```bash
 remote-cli config add-dir ~/safe/directory
 ```
 
-### Command Filtering
+### 命令过滤
 
-Dangerous commands are automatically blocked:
+危险命令会被自动拦截：
 - `rm -rf /`
-- `sudo` operations on system files
-- Direct disk writes (`dd`, `mkfs`)
-- Fork bombs and other malicious patterns
+- 系统文件的 `sudo` 操作
+- 直接磁盘写入（`dd`、`mkfs`）
+- Fork 炸弹等恶意模式
 
-### Device Authentication
+### 设备认证
 
-- Each device generates a **unique ID** based on machine hardware
-- Binding codes **expire after 5 minutes**
-- Each user can only control **their bound devices**
-- Unbind at any time: `/unbind` in Feishu
+- 每台设备基于机器硬件生成**唯一 ID**
+- 绑定码**5 分钟后过期**
+- 每个用户只能控制**自己绑定的设备**
+- 随时解绑：在飞书中发送 `/unbind`
 
-## Router Server Deployment
+## 系统架构
 
-> **Note**: Most users don't need to deploy the router server. Your team administrator should deploy one router server for the entire team to share.
+```
+┌─────────────────┐         ┌──────────────────────────────┐
+│   飞书服务器     │         │      开发者 A 的工作电脑        │
+│                 │         │      (Mac/Linux)             │
+│   开发者 A 的    │◀───────▶│  ┌─────────────────────────┐ │
+│   手机          │         │  │  remote-cli (本地)       │ │
+│   与机器人私聊   │         │  │  - WebSocket 客户端      │ │
+│                 │         │  │  - Claude Code 执行器    │ │
+└─────────────────┘         │  │  - 安全目录守卫           │ │
+        │                   │  └──────────┬──────────────┘ │
+        │                   │             ▼                 │
+        │                   │  本地 Claude Code CLI        │
+        ▼                   │  (使用 Agent SDK)            │
+┌─────────────────┐         └──────────────────────────────┘
+│   路由服务器     │
+│  (团队部署)      │         ┌──────────────────────────────┐
+│  ┌───────────┐  │         │      开发者 B 的工作电脑        │
+│  │ Webhook   │  │         │  ┌─────────────────────────┐ │
+│  │ 处理器    │  │◀───────▶│  │  remote-cli (本地)       │ │
+│  └───────────┘  │         │  └─────────────────────────┘ │
+│  ┌───────────┐  │         └──────────────────────────────┘
+│  │ WebSocket │  │
+│  │   中心    │  │
+│  └───────────┘  │
+│  ┌───────────┐  │
+│  │   绑定    │  │
+│  │   注册表   │  │
+│  └───────────┘  │
+└─────────────────┘
+```
 
-See [Router Deployment Guide](#router-deployment) for detailed instructions.
+## 路由服务器部署
 
-Quick deployment:
+> **注意**：大多数用户不需要部署路由服务器。团队管理员应该部署一个路由服务器供整个团队共享。
+
+详见下方的[路由部署指南](#路由部署指南)。
+
+快速部署：
 
 ```bash
-# Install router server
+# 安装路由服务器
 npm install -g @yu_robotics/remote-cli-router
 
-# Configure
+# 配置
 remote-cli-router config
 
-# Start
+# 启动
 remote-cli-router start
 ```
 
-## Troubleshooting
+## 常见问题
 
-### Service won't start
+### 服务无法启动
 
 ```bash
-# Check if already running
+# 检查是否已在运行
 remote-cli status
 
-# View logs
+# 查看日志
 remote-cli logs
 
-# Restart
+# 重启
 remote-cli stop
 remote-cli start
 ```
 
-### Connection issues
+### 连接问题
 
 ```bash
-# Check network
+# 检查网络
 ping your-router-server.com
 
-# Verify configuration
+# 验证配置
 remote-cli config show
 
-# Re-initialize
+# 重新初始化
 remote-cli init --server https://your-router-server.com --force
 ```
 
-### Binding code expired
+### 绑定码过期
 
 ```bash
-# Generate new binding code
+# 生成新的绑定码
 remote-cli init --force
 ```
 
-## Contributing
+## 贡献指南
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+我们欢迎贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解指南。
 
-## License
+## 许可证
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
 
 ---
 
-## Detailed Documentation
+## 详细文档
 
-### Router Deployment
+### 路由部署指南
 
-The router server manages message forwarding between Feishu and local clients.
+路由服务器负责在飞书和本地客户端之间转发消息。
 
-#### Prerequisites
+#### 环境要求
 
-- A cloud server with at least **1 CPU core** and **1GB RAM**
+- 至少 **1 核 CPU** 和 **1GB 内存** 的云服务器
 - **Node.js** >= 18.0.0
-- **A domain name** with SSL certificate (HTTPS required)
-- **Feishu bot** created and configured
+- **域名**和 SSL 证书（需要 HTTPS）
+- 已创建和配置的**飞书机器人**
 
-#### Installation
+#### 安装
 
 ```bash
-# Clone repository
+# 克隆仓库
 git clone https://github.com/xiaoyu/remote-cli.git
 cd remote-cli
 
-# Install dependencies
+# 安装依赖
 npm install
 
-# Build router
+# 构建路由服务器
 npm run build -w @yu_robotics/remote-cli-router
 
-# Link globally
+# 全局链接
 cd packages/router
 npm link
 ```
 
-#### Configuration
+#### 配置
 
 ```bash
 remote-cli-router config
 ```
 
-You will be prompted for:
-- **Feishu App ID** (required)
-- **Feishu App Secret** (required)
-- Feishu Encrypt Key (optional)
-- Feishu Verification Token (optional)
-- Server Port (default: 3000)
+你将需要输入：
+- **飞书 App ID**（必需）
+- **飞书 App Secret**（必需）
+- 飞书 Encrypt Key（可选）
+- 飞书 Verification Token（可选）
+- 服务器端口（默认：3000）
 
-#### Setup Feishu Bot
+#### 设置飞书机器人
 
-1. Go to [Feishu Open Platform](https://open.feishu.cn/)
-2. Create a new app
-3. Enable **Bot** capabilities
-4. Configure permissions (权限管理):
-   | Permission | Description | API Scope |
-   |------------|-------------|-----------|
-   | 获取与发送单聊、群组消息 | Get and send single/group messages | `im:message` |
-   | 读取用户发给机器人的单聊消息 | Read user's private messages to bot | `im:message.p2p_msg:readonly` |
-   | 以应用的身份发消息 | Send messages as bot | `im:message:send_as_bot` |
-5. Enable **Long Connection** (长连接) in Event & Callback section
-6. Subscribe to event: `im.message.receive_v1` ([Receive Message v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
-7. Configure webhook URL: `https://your-domain.com/webhook/feishu`
-8. Get credentials (App ID, App Secret) and publish the app
+1. 访问[飞书开放平台](https://open.feishu.cn/)
+2. 创建新应用
+3. 启用**机器人**能力
+4. 配置权限（权限管理）：
+   | 权限 | 说明 | API Scope |
+   |------|------|-----------|
+   | 获取与发送单聊、群组消息 | 获取和发送单聊、群组消息 | `im:message` |
+   | 读取用户发给机器人的单聊消息 | 读取用户发给机器人的单聊消息 | `im:message.p2p_msg:readonly` |
+   | 以应用的身份发消息 | 以应用的身份发送消息 | `im:message:send_as_bot` |
+5. 在**事件与回调**部分开启**长连接**
+6. 订阅事件：`im.message.receive_v1` ([接收消息 v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
+7. 配置 webhook URL：`https://your-domain.com/webhook/feishu`
+8. 获取凭证（App ID、App Secret）并发布应用
 
-#### Nginx Configuration
+#### Nginx 配置
 
 ```nginx
 server {
@@ -407,9 +406,9 @@ server {
 }
 ```
 
-### Configuration Reference
+### 配置参考
 
-#### Local Client Config (`~/.remote-cli/config.json`)
+#### 本地客户端配置（`~/.remote-cli/config.json`）
 
 ```json
 {
@@ -430,30 +429,30 @@ server {
 }
 ```
 
-### Development
+### 开发
 
 ```bash
-# Clone repository
+# 克隆仓库
 git clone https://github.com/xiaoyu/remote-cli.git
 cd remote-cli
 
-# Install dependencies
+# 安装依赖
 npm install
 
-# Build all packages
+# 构建所有包
 npm run build
 
-# Run tests
+# 运行测试
 npm test
 
-# Run CLI in development mode
+# 以开发模式运行 CLI
 npm run cli:dev
 
-# Run router in development mode
+# 以开发模式运行路由服务器
 npm run router:dev
 ```
 
-### Support
+### 支持
 
-- Issues: [GitHub Issues](https://github.com/xiaoyu/remote-cli/issues)
-- Discussions: [GitHub Discussions](https://github.com/xiaoyu/remote-cli/discussions)
+- 问题反馈：[GitHub Issues](https://github.com/xiaoyu/remote-cli/issues)
+- 讨论交流：[GitHub Discussions](https://github.com/xiaoyu/remote-cli/discussions)
