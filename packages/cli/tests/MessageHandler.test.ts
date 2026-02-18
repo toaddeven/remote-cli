@@ -3,6 +3,7 @@ import { MessageHandler } from '../src/client/MessageHandler';
 import { ClaudeExecutor } from '../src/executor/ClaudeExecutor';
 import { WebSocketClient } from '../src/client/WebSocketClient';
 import { DirectoryGuard } from '../src/security/DirectoryGuard';
+import { ConfigManager } from '../src/config/ConfigManager';
 
 // Mock dependencies
 vi.mock('../src/executor/ClaudeExecutor');
@@ -13,6 +14,7 @@ describe('MessageHandler', () => {
   let mockExecutor: any;
   let mockWsClient: any;
   let directoryGuard: DirectoryGuard;
+  let mockConfig: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,7 +37,16 @@ describe('MessageHandler', () => {
       isConnected: vi.fn(() => true),
     };
 
-    handler = new MessageHandler(mockWsClient, mockExecutor, directoryGuard);
+    // Mock ConfigManager
+    mockConfig = {
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+      has: vi.fn(() => true),
+      getAll: vi.fn(() => ({})),
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+
+    handler = new MessageHandler(mockWsClient, mockExecutor, directoryGuard, mockConfig);
   });
 
   afterEach(() => {
