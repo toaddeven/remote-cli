@@ -21,6 +21,23 @@ This is a **strictly enforced** rule - any pull request containing Chinese text 
 - **Code submissions**: All code, comments, documentation, and commit messages MUST be in English
 - **Consistency**: Maintain the same language within a conversation context for better understanding
 
+## README Synchronization Requirement
+
+**CRITICAL: When modifying any README file, you MUST update ALL README files to maintain consistency.**
+
+This project maintains two README files:
+- `README.md` - Chinese documentation (default)
+- `README_EN.md` - English documentation
+
+**Rules:**
+1. **Always modify both files** when updating documentation
+2. **Keep section structure identical** - same order, same hierarchy
+3. **Keep content equivalent** - English and Chinese should convey the same information
+4. **Update links** - Ensure cross-references between READMEs are correct
+5. **Verify both files** before committing
+
+**Example:** If you add a new feature to Features section in README.md, you MUST also add it to README_EN.md in the same position.
+
 ## Testing Requirement
 
 **CRITICAL: All code changes MUST include corresponding test coverage.**
