@@ -143,8 +143,8 @@ yarn global add @yu_robotics/remote-cli
 ### From Source
 
 ```bash
-# Clone the repository
-git clone https://github.com/xiaoyu/remote-cli.git
+# Clone the repository (replace with actual repository URL)
+git clone <repository-url>
 cd remote-cli
 
 # Install dependencies
@@ -365,8 +365,8 @@ The router server manages message forwarding between Feishu and local clients.
 #### Installation
 
 ```bash
-# Clone repository
-git clone https://github.com/xiaoyu/remote-cli.git
+# Clone repository (replace with actual repository URL)
+git clone <repository-url>
 cd remote-cli
 
 # Install dependencies
@@ -465,8 +465,8 @@ server {
 ### Development
 
 ```bash
-# Clone repository
-git clone https://github.com/xiaoyu/remote-cli.git
+# Clone repository (replace with actual repository URL)
+git clone <repository-url>
 cd remote-cli
 
 # Install dependencies
@@ -487,5 +487,5 @@ npm run router:dev
 
 ### Support
 
-- Issues: [GitHub Issues](https://github.com/xiaoyu/remote-cli/issues)
-- Discussions: [GitHub Discussions](https://github.com/xiaoyu/remote-cli/discussions)
+- Issues: Please submit via the project's Issue page
+- Discussions: Please participate via the project's Discussion page

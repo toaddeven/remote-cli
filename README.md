@@ -142,8 +142,8 @@ yarn global add @yu_robotics/remote-cli
 ### 从源码安装
 
 ```bash
-# 克隆仓库
-git clone https://github.com/xiaoyu/remote-cli.git
+# 克隆仓库（请替换为实际的仓库地址）
+git clone <repository-url>
 cd remote-cli
 
 # 安装依赖
@@ -364,8 +364,8 @@ MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
 #### 安装
 
 ```bash
-# 克隆仓库
-git clone https://github.com/xiaoyu/remote-cli.git
+# 克隆仓库（请替换为实际的仓库地址）
+git clone <repository-url>
 cd remote-cli
 
 # 安装依赖
@@ -464,8 +464,8 @@ server {
 ### 开发
 
 ```bash
-# 克隆仓库
-git clone https://github.com/xiaoyu/remote-cli.git
+# 克隆仓库（请替换为实际的仓库地址）
+git clone <repository-url>
 cd remote-cli
 
 # 安装依赖
@@ -486,5 +486,5 @@ npm run router:dev
 
 ### 支持
 
-- 问题反馈：[GitHub Issues](https://github.com/xiaoyu/remote-cli/issues)
-- 讨论交流：[GitHub Discussions](https://github.com/xiaoyu/remote-cli/discussions)
+- 问题反馈：请通过项目的 Issue 页面提交
+- 讨论交流：请通过项目的 Discussion 页面参与
