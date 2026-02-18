@@ -110,6 +110,25 @@ remote-cli start
 - **Claude Code CLI** 并已配置
 - 可访问的**飞书机器人**（团队应部署一个路由服务器）
 
+## 路由服务器部署
+
+> **注意**：大多数用户不需要部署路由服务器。团队管理员应该部署一个路由服务器供整个团队共享。
+
+详见下方的[路由部署指南](#路由部署指南)。
+
+快速部署：
+
+```bash
+# 安装路由服务器
+npm install -g @yu_robotics/remote-cli-router
+
+# 配置
+remote-cli-router config
+
+# 启动
+remote-cli-router start
+```
+
 ## 安装
 
 ### 从 npm 安装（推荐）
@@ -289,25 +308,6 @@ remote-cli config add-dir ~/safe/directory
 - 绑定码**5 分钟后过期**
 - 每个用户只能控制**自己绑定的设备**
 - 随时解绑：在飞书中发送 `/unbind`
-
-## 路由服务器部署
-
-> **注意**：大多数用户不需要部署路由服务器。团队管理员应该部署一个路由服务器供整个团队共享。
-
-详见下方的[路由部署指南](#路由部署指南)。
-
-快速部署：
-
-```bash
-# 安装路由服务器
-npm install -g @yu_robotics/remote-cli-router
-
-# 配置
-remote-cli-router config
-
-# 启动
-remote-cli-router start
-```
 
 ## 常见问题
 

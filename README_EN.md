@@ -111,6 +111,25 @@ Before you begin, ensure you have:
 - **Claude Code CLI** installed and configured
 - Access to a **Feishu (Lark) bot** (your team should deploy a router server)
 
+## Router Server Deployment
+
+> **Note**: Most users don't need to deploy the router server. Your team administrator should deploy one router server for the entire team to share.
+
+See [Router Deployment Guide](#router-deployment) for detailed instructions.
+
+Quick deployment:
+
+```bash
+# Install router server
+npm install -g @yu_robotics/remote-cli-router
+
+# Configure
+remote-cli-router config
+
+# Start
+remote-cli-router start
+```
+
 ## Installation
 
 ### From npm (Recommended)
@@ -290,25 +309,6 @@ Dangerous commands are automatically blocked:
 - Binding codes **expire after 5 minutes**
 - Each user can only control **their bound devices**
 - Unbind at any time: `/unbind` in Feishu
-
-## Router Server Deployment
-
-> **Note**: Most users don't need to deploy the router server. Your team administrator should deploy one router server for the entire team to share.
-
-See [Router Deployment Guide](#router-deployment) for detailed instructions.
-
-Quick deployment:
-
-```bash
-# Install router server
-npm install -g @yu_robotics/remote-cli-router
-
-# Configure
-remote-cli-router config
-
-# Start
-remote-cli-router start
-```
 
 ## Troubleshooting
 
