@@ -365,13 +365,16 @@ remote-cli-router config
 1. 访问[飞书开放平台](https://open.feishu.cn/)
 2. 创建新应用
 3. 启用**机器人**能力
-4. 配置权限：
-   - `im:message` - 接收消息
-   - `im:message.p2p_msg` - 接收私聊消息
-   - `im:message:send_as_bot` - 以机器人身份发送消息
-5. 配置 webhook URL：`https://your-domain.com/webhook/feishu`
-6. 订阅事件：`im.message.receive_v1`
-7. 获取凭证并发布应用
+4. 配置权限（权限管理）：
+   | 权限 | 说明 | API Scope |
+   |------|------|-----------|
+   | 获取与发送单聊、群组消息 | 获取和发送单聊、群组消息 | `im:message` |
+   | 读取用户发给机器人的单聊消息 | 读取用户发给机器人的单聊消息 | `im:message.p2p_msg:readonly` |
+   | 以应用的身份发消息 | 以应用的身份发送消息 | `im:message:send_as_bot` |
+5. 在**事件与回调**部分开启**长连接**
+6. 订阅事件：`im.message.receive_v1` ([接收消息 v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
+7. 配置 webhook URL：`https://your-domain.com/webhook/feishu`
+8. 获取凭证（App ID、App Secret）并发布应用
 
 #### Nginx 配置
 

@@ -11,13 +11,13 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 ## Table of Contents
 
 - [Features](#features)
+- [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Slash Commands](#slash-commands)
 - [Security](#security)
-- [Architecture](#architecture)
 - [Router Server Deployment](#router-server-deployment)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -31,6 +31,40 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 - 🤖 **Claude Code Integration**: Full access to Claude Code's capabilities and context
 - ⚡ **Persistent Process**: Long-running Claude process with bidirectional streaming via stdio
 - 🚀 **Easy Setup**: One-command installation and initialization
+
+## Architecture
+
+```
+┌─────────────────┐         ┌──────────────────────────────┐
+│  Feishu Server  │         │  Developer A's Work PC       │
+│                 │         │  (Mac/Linux)                 │
+│  Developer A's  │◀───────▶│  ┌─────────────────────────┐ │
+│  Phone          │         │  │  remote-cli (local)     │ │
+│  Private Chat   │         │  │  - WebSocket Client     │ │
+│  with Bot       │         │  │  - Claude Code Executor │ │
+└─────────────────┘         │  │  - Security Directory   │ │
+        │                   │  │    Guard                │ │
+        │                   │  └──────────┬──────────────┘ │
+        │                   │             ▼                 │
+        │                   │  Local Claude Code CLI        │
+        ▼                   │  (Using Agent SDK)            │
+┌─────────────────┐         └──────────────────────────────┘
+│  Router Server  │
+│  (Team Deploy)  │         ┌──────────────────────────────┐
+│  ┌───────────┐  │         │  Developer B's Work PC       │
+│  │ Webhook   │  │         │  ┌─────────────────────────┐ │
+│  │ Handler   │  │◀───────▶│  │  remote-cli (local)     │ │
+│  └───────────┘  │         │  └─────────────────────────┘ │
+│  ┌───────────┐  │         └──────────────────────────────┘
+│  │WebSocket  │  │
+│  │   Hub     │  │
+│  └───────────┘  │
+│  ┌───────────┐  │
+│  │  Binding  │  │
+│  │  Registry │  │
+│  └───────────┘  │
+└─────────────────┘
+```
 
 ## Quick Start
 
@@ -218,40 +252,6 @@ Dangerous commands are automatically blocked:
 - Each user can only control **their bound devices**
 - Unbind at any time: `/unbind` in Feishu
 
-## Architecture
-
-```
-┌─────────────────┐         ┌──────────────────────────────┐
-│  Feishu Server  │         │  Developer A's Work PC       │
-│                 │         │  (Mac/Linux)                 │
-│  Developer A's  │◀───────▶│  ┌─────────────────────────┐ │
-│  Phone          │         │  │  remote-cli (local)     │ │
-│  Private Chat   │         │  │  - WebSocket Client     │ │
-│  with Bot       │         │  │  - Claude Code Executor │ │
-└─────────────────┘         │  │  - Security Directory   │ │
-        │                   │  │    Guard                │ │
-        │                   │  └──────────┬──────────────┘ │
-        │                   │             ▼                 │
-        │                   │  Local Claude Code CLI        │
-        ▼                   │  (Using Agent SDK)            │
-┌─────────────────┐         └──────────────────────────────┘
-│  Router Server  │
-│  (Team Deploy)  │         ┌──────────────────────────────┐
-│  ┌───────────┐  │         │  Developer B's Work PC       │
-│  │ Webhook   │  │         │  ┌─────────────────────────┐ │
-│  │ Handler   │  │◀───────▶│  │  remote-cli (local)     │ │
-│  └───────────┘  │         │  └─────────────────────────┘ │
-│  ┌───────────┐  │         └──────────────────────────────┘
-│  │WebSocket  │  │
-│  │   Hub     │  │
-│  └───────────┘  │
-│  ┌───────────┐  │
-│  │  Binding  │  │
-│  │  Registry │  │
-│  └───────────┘  │
-└─────────────────┘
-```
-
 ## Router Server Deployment
 
 > **Note**: Most users don't need to deploy the router server. Your team administrator should deploy one router server for the entire team to share.
@@ -366,13 +366,16 @@ You will be prompted for:
 1. Go to [Feishu Open Platform](https://open.feishu.cn/)
 2. Create a new app
 3. Enable **Bot** capabilities
-4. Configure permissions:
-   - `im:message` - Receive messages
-   - `im:message.p2p_msg` - Receive private messages
-   - `im:message:send_as_bot` - Send messages as bot
-5. Configure webhook URL: `https://your-domain.com/webhook/feishu`
-6. Subscribe to events: `im.message.receive_v1`
-7. Get credentials and publish the app
+4. Configure permissions (权限管理):
+   | Permission | Description | API Scope |
+   |------------|-------------|-----------|
+   | 获取与发送单聊、群组消息 | Get and send single/group messages | `im:message` |
+   | 读取用户发给机器人的单聊消息 | Read user's private messages to bot | `im:message.p2p_msg:readonly` |
+   | 以应用的身份发消息 | Send messages as bot | `im:message:send_as_bot` |
+5. Enable **Long Connection** (长连接) in Event & Callback section
+6. Subscribe to event: `im.message.receive_v1` ([Receive Message v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
+7. Configure webhook URL: `https://your-domain.com/webhook/feishu`
+8. Get credentials (App ID, App Secret) and publish the app
 
 #### Nginx Configuration
 
