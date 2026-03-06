@@ -16,6 +16,7 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 - 🤖 **Claude Code Integration**: Full access to Claude Code's capabilities and context
 - ⚡ **Persistent Process**: Long-running Claude process with bidirectional streaming via stdio
 - 🚀 **Easy Setup**: One-command installation and initialization
+- 🔌 **Dual Modes**: Supports both Router Mode (teams) and Direct Mode (individuals)
 
 ### Usage Examples
 
@@ -58,6 +59,21 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 - 💡 **Development Convenience**: Continue programming, check logs, and fix issues when temporarily away from your computer
 - 🆓 **Completely Free**: No need to purchase cloud servers; utilize existing equipment
 
+### Scenario 3: Individual Developers (Direct Mode, No Router) ⭐
+
+**Target Users**: Independent developers, users who want simplified deployment
+
+**Deployment**:
+- Run the CLI client directly on your local computer (no router server needed)
+- Client connects directly to Feishu via long connection
+- Provide service through Feishu
+
+**Advantages**:
+- 🚀 **Minimal Deployment**: Just run one client, no router server needed
+- ⚡ **Low Latency**: Messages go directly from Feishu to local, no intermediate forwarding
+- 🛠️ **Zero Operations**: Only one process to manage
+- 🆓 **Completely Free**: No server needed, just your personal computer
+
 ## Architecture
 
 ```
@@ -94,6 +110,8 @@ Remote control your Claude Code CLI from anywhere using your mobile phone throug
 
 ## Quick Start
 
+### Option 1: Router Mode (Teams/Multi-user)
+
 ```bash
 # Install the CLI
 npm install -g @yu_robotics/remote-cli
@@ -111,6 +129,31 @@ remote-cli start
 # And start coding from your phone!
 ```
 
+### Option 2: Direct Mode (Individual, No Router) ⭐
+
+```bash
+# Install the CLI
+npm install -g @yu_robotics/remote-cli
+
+# Initialize direct mode (set Feishu credentials at the same time)
+remote-cli init --direct \
+  --feishu-app-id <your-app-id> \
+  --feishu-app-secret <your-app-secret>
+
+# Or initialize first, then set credentials separately
+remote-cli init --direct
+remote-cli config set feishu.appId <your-app-id>
+remote-cli config set feishu.appSecret <your-app-secret>
+
+# Add allowed directories
+remote-cli config add-dir ~/projects
+
+# Start direct mode service
+remote-cli start --direct
+
+# Send a message to the bot in Feishu and start coding!
+```
+
 ## Prerequisites
 
 Before you begin, ensure you have:
@@ -118,7 +161,27 @@ Before you begin, ensure you have:
 - **Node.js** >= 18.0.0
 - **npm** or **yarn** package manager
 - **Claude Code CLI** installed and configured
-- Access to a **Feishu (Lark) bot** (your team should deploy a router server)
+- Access to a **Feishu (Lark) bot** (your team should deploy a router server, or use your own bot for direct mode)
+
+## Direct Mode - Feishu Bot Setup
+
+When using direct mode, you need to create and configure your own Feishu bot:
+
+1. Go to [Feishu Open Platform](https://open.feishu.cn/)
+2. Create a new app (Custom App)
+3. Enable **Bot** capabilities
+4. Configure permissions:
+   | Permission | Description | API Scope |
+   |------------|-------------|-----------|
+   | 获取与发送单聊、群组消息 | Get and send single/group messages | `im:message` |
+   | 读取用户发给机器人的单聊消息 | Read user's private messages to bot | `im:message.p2p_msg:readonly` |
+   | 以应用的身份发消息 | Send messages as bot | `im:message:send_as_bot` |
+5. Enable **Long Connection** in Event & Callback section
+6. Subscribe to event: `im.message.receive_v1` ([Receive Message v2.0](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive))
+7. Get credentials (App ID, App Secret) and publish the app (Publish to Enterprise)
+8. Find the bot in your enterprise and start a conversation
+
+**Note**: Direct mode supports single-user only. The bot will automatically bind to the first user who messages it.
 
 ## Router Server Deployment
 
@@ -341,7 +404,9 @@ remote-cli stop
 
 ## Slash Commands
 
-Once connected, use these commands in Feishu:
+### Router Mode Commands
+
+Once connected to router mode, use these commands in Feishu:
 
 ### Device Management Commands
 
@@ -396,6 +461,21 @@ All commands/skills supported by local Claude Code are passed through directly, 
    ```
    /commit
    ```
+
+### Direct Mode Commands
+
+In direct mode, use these commands in Feishu:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help information |
+| `/status` | Show current status |
+| `/cd <directory>` | Change working directory |
+| `/clear` | Clear conversation context |
+| `/abort` | Abort current command |
+| `/compact` | Compress conversation history |
+| **Natural language messages** | Send messages directly to Claude Code |
+| **Other `/` commands** | Pass through to Claude Code for execution |
 
 ## Security
 
