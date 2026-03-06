@@ -15,7 +15,7 @@ export interface SecurityConfig {
 }
 
 /**
- * Server configuration
+ * Server configuration (for router mode)
  */
 export interface ServerConfig {
   /** WebSocket server URL */
@@ -24,6 +24,18 @@ export interface ServerConfig {
   reconnectInterval: number;
   /** Heartbeat interval (milliseconds) */
   heartbeatInterval: number;
+}
+
+/**
+ * Feishu configuration (for direct mode)
+ */
+export interface FeishuConfig {
+  /** Feishu app ID */
+  appId?: string;
+  /** Feishu app secret */
+  appSecret?: string;
+  /** Whether direct mode is enabled */
+  directMode?: boolean;
 }
 
 /**
@@ -36,6 +48,7 @@ export interface Config {
   lastWorkingDirectory?: string;
   security: SecurityConfig;
   server: ServerConfig;
+  feishu?: FeishuConfig;
   service?: {
     running?: boolean;
     startedAt?: number;
@@ -57,5 +70,8 @@ export const DEFAULT_CONFIG: Config = {
     url: 'wss://localhost:3000',
     reconnectInterval: 5000,
     heartbeatInterval: 30000
+  },
+  feishu: {
+    directMode: false
   }
 };

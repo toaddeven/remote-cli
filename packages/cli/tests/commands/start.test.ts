@@ -5,6 +5,16 @@ import { WebSocketClient } from '../../src/client/WebSocketClient';
 import { CLI_VERSION } from '../../src/types';
 import axios from 'axios';
 
+// Mock DirectModeHandler
+const mockDirectHandlerStart = vi.fn().mockResolvedValue(undefined);
+const mockDirectHandlerStop = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../src/feishu', () => ({
+  DirectModeHandler: vi.fn().mockImplementation(() => ({
+    start: mockDirectHandlerStart,
+    stop: mockDirectHandlerStop,
+  })),
+}));
+
 // ---------------------------------------------------------------------------
 // Module-level mocks
 // ---------------------------------------------------------------------------
@@ -216,6 +226,78 @@ describe('start command', () => {
       expect(result.success).toBe(true);
       expect(mockConfig.set).toHaveBeenCalledWith('service.running', true);
       expect(mockConfig.set).toHaveBeenCalledWith('service.startedAt', expect.any(Number));
+    });
+  });
+
+  describe('direct mode', () => {
+    beforeEach(() => {
+      // Setup config with feishu credentials for direct mode
+      mockConfig.get = vi.fn((key: string) => {
+        if (key === 'feishu.appId') return 'test-app-id';
+        if (key === 'feishu.appSecret') return 'test-app-secret';
+        if (key === 'openId') return 'test-open-id';
+        return undefined;
+      });
+      mockConfig.getAll.mockReturnValue({
+        deviceId: 'dev_test_12345',
+        security: {
+          allowedDirectories: ['~/projects'],
+        },
+      });
+    });
+
+    it('should start service in direct mode with valid feishu credentials', async () => {
+      const result = await startCommand({
+        daemon: false,
+        direct: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockDirectHandlerStart).toHaveBeenCalled();
+    });
+
+    it('should fail in direct mode without feishu appId', async () => {
+      mockConfig.get = vi.fn((key: string) => {
+        if (key === 'feishu.appSecret') return 'test-app-secret';
+        return undefined;
+      });
+
+      const result = await startCommand({
+        daemon: false,
+        direct: true,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('feishu.appId');
+      expect(mockDirectHandlerStart).not.toHaveBeenCalled();
+    });
+
+    it('should fail in direct mode without feishu appSecret', async () => {
+      mockConfig.get = vi.fn((key: string) => {
+        if (key === 'feishu.appId') return 'test-app-id';
+        return undefined;
+      });
+
+      const result = await startCommand({
+        daemon: false,
+        direct: true,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('feishu.appSecret');
+      expect(mockDirectHandlerStart).not.toHaveBeenCalled();
+    });
+
+    it('should handle DirectModeHandler start errors', async () => {
+      mockDirectHandlerStart.mockRejectedValueOnce(new Error('Feishu connection failed'));
+
+      const result = await startCommand({
+        daemon: false,
+        direct: true,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Feishu connection failed');
     });
   });
 });

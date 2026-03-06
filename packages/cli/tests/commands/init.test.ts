@@ -209,4 +209,42 @@ describe('init command', () => {
       expect(result.error).toBeDefined();
     });
   });
+
+  describe('direct mode initialization', () => {
+    it('should initialize in direct mode without server URL', async () => {
+      const result = await initCommand({
+        direct: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.deviceId).toMatch(/^dev_[a-z]+_[a-z0-9\-]+$/);
+      expect(mockConfig.set).toHaveBeenCalledWith('deviceId', expect.any(String));
+      expect(mockConfig.set).toHaveBeenCalledWith('feishu.directMode', true);
+    });
+
+    it('should save feishu app credentials when provided', async () => {
+      const result = await initCommand({
+        direct: true,
+        feishuAppId: 'cli-test-app-id',
+        feishuAppSecret: 'cli-test-app-secret',
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockConfig.set).toHaveBeenCalledWith('feishu.appId', 'cli-test-app-id');
+      expect(mockConfig.set).toHaveBeenCalledWith('feishu.appSecret', 'cli-test-app-secret');
+      expect(mockConfig.set).toHaveBeenCalledWith('feishu.directMode', true);
+    });
+
+    it('should allow initializing direct mode without feishu credentials', async () => {
+      const result = await initCommand({
+        direct: true,
+      });
+
+      expect(result.success).toBe(true);
+      // Should not set feishu credentials if not provided
+      expect(mockConfig.set).not.toHaveBeenCalledWith('feishu.appId', expect.anything());
+      expect(mockConfig.set).not.toHaveBeenCalledWith('feishu.appSecret', expect.anything());
+      expect(mockConfig.set).toHaveBeenCalledWith('feishu.directMode', true);
+    });
+  });
 });

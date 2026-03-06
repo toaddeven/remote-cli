@@ -71,6 +71,10 @@ export class ConfigManager {
         ...DEFAULT_CONFIG.server,
         ...(config.server || {}),
       },
+      feishu: {
+        ...DEFAULT_CONFIG.feishu,
+        ...(config.feishu || {}),
+      },
     };
   }
 

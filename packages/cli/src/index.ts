@@ -27,31 +27,58 @@ program
 program
   .command('init')
   .description('Initialize remote CLI and generate binding code')
-  .requiredOption('-s, --server <url>', 'Router server URL')
+  .option('-s, --server <url>', 'Router server URL (for router mode)')
   .option('-d, --dirs <dirs...>', 'Allowed directories (can specify multiple)')
   .option('-f, --force', 'Force re-initialization')
+  .option('--direct', 'Initialize for direct mode (no router)')
+  .option('--feishu-app-id <id>', 'Feishu app ID (for direct mode)')
+  .option('--feishu-app-secret <secret>', 'Feishu app secret (for direct mode)')
   .action(async (options) => {
     try {
       console.log(chalk.blue('🚀 Initializing remote CLI...\n'));
+
+      // Validate mode options
+      if (!options.direct && !options.server) {
+        console.error(chalk.red('❌ Error:'), 'Either --server (for router mode) or --direct (for direct mode) is required');
+        process.exit(1);
+      }
 
       const result = await initCommand({
         serverUrl: options.server,
         allowedDirs: options.dirs,
         force: options.force,
+        direct: options.direct,
+        feishuAppId: options.feishuAppId,
+        feishuAppSecret: options.feishuAppSecret,
       });
 
       if (result.success) {
         console.log(chalk.green('✅ Initialization successful!\n'));
-        console.log(chalk.yellow('📋 Binding Code:'), chalk.bold(result.bindingCode));
+        if (result.bindingCode) {
+          console.log(chalk.yellow('📋 Binding Code:'), chalk.bold(result.bindingCode));
+        }
         console.log(chalk.gray('Device ID:'), result.deviceId);
         console.log();
-        console.log(
-          chalk.cyan('📱 Next steps:'),
-          '\n  1. Open Feishu and send the binding code to the bot',
-          '\n  2. Run',
-          chalk.bold('remote-cli start'),
-          'to start the service'
-        );
+
+        if (options.direct) {
+          console.log(
+            chalk.cyan('📱 Next steps (Direct Mode):'),
+            '\n  1. Set Feishu credentials if not already done:',
+            '\n     remote-cli config set feishu.appId <your-app-id>',
+            '\n     remote-cli config set feishu.appSecret <your-app-secret>',
+            '\n  2. Run',
+            chalk.bold('remote-cli start --direct'),
+            'to start the service'
+          );
+        } else {
+          console.log(
+            chalk.cyan('📱 Next steps (Router Mode):'),
+            '\n  1. Open Feishu and send the binding code to the bot',
+            '\n  2. Run',
+            chalk.bold('remote-cli start'),
+            'to start the service'
+          );
+        }
       } else {
         console.error(chalk.red('❌ Initialization failed:'), result.error);
         process.exit(1);
@@ -69,24 +96,25 @@ program
   .command('start')
   .description('Start the remote CLI service')
   .option('-d, --daemon', 'Run as background daemon')
+  .option('--direct', 'Run in direct mode (connect directly to Feishu, no router)')
   .action(async (options) => {
     try {
       const result = await startCommand({
         daemon: options.daemon,
+        direct: options.direct,
       });
 
       if (result.success) {
         console.log(chalk.green('✅ Service started successfully!'));
         if (result.daemonMode) {
           console.log(chalk.gray('Running in daemon mode'));
-        } else {
+        } else if (result.keepAlive || !options.direct) {
           console.log(chalk.gray('Running in foreground mode (press Ctrl+C to stop)'));
           // Keep process alive in foreground mode
           process.on('SIGINT', () => {
             console.log(chalk.yellow('\n⏹  Shutting down...'));
             process.exit(0);
           });
-          // Wait indefinitely
           await new Promise(() => {});
         }
       } else {
