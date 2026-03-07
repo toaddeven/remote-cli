@@ -24,7 +24,10 @@ export class ConfigManager {
    */
   static async initialize(): Promise<ConfigManager> {
     const homeDir = os.homedir();
-    const configDir = path.join(homeDir, '.remote-cli');
+    // Support custom config directory via environment variable
+    const configDir = process.env.REMOTE_CLI_CONFIG
+      ? path.resolve(process.env.REMOTE_CLI_CONFIG)
+      : path.join(homeDir, '.remote-cli');
     const configFile = path.join(configDir, 'config.json');
 
     // Ensure config directory exists

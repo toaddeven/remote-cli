@@ -13,6 +13,8 @@ describe('ConfigManager', () => {
   const mockHomeDir = '/mock/home';
   const mockConfigDir = path.join(mockHomeDir, '.remote-cli');
   const mockConfigFile = path.join(mockConfigDir, 'config.json');
+  const customConfigDir = '/custom/config/dir';
+  const customConfigFile = path.join(customConfigDir, 'config.json');
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -24,6 +26,11 @@ describe('ConfigManager', () => {
   });
 
   describe('initialization', () => {
+    beforeEach(() => {
+      // Clear environment variable before each test
+      delete process.env.REMOTE_CLI_CONFIG;
+    });
+
     it('should create config directory if not exists', async () => {
       (fs.access as any) = vi.fn().mockRejectedValue(new Error('ENOENT'));
       (fs.mkdir as any) = vi.fn().mockResolvedValue(undefined);
@@ -33,6 +40,47 @@ describe('ConfigManager', () => {
       configManager = await ConfigManager.initialize();
 
       expect(fs.mkdir).toHaveBeenCalledWith(mockConfigDir, { recursive: true });
+    });
+
+    it('should use default config directory when REMOTE_CLI_CONFIG is not set', async () => {
+      (fs.access as any) = vi.fn().mockResolvedValue(undefined);
+      (fs.readFile as any) = vi.fn().mockRejectedValue(new Error('ENOENT'));
+      (fs.writeFile as any) = vi.fn().mockResolvedValue(undefined);
+
+      configManager = await ConfigManager.initialize();
+
+      expect(configManager.getConfigDir()).toBe(mockConfigDir);
+      expect(configManager.getConfigFile()).toBe(mockConfigFile);
+    });
+
+    it('should use custom config directory from REMOTE_CLI_CONFIG environment variable', async () => {
+      process.env.REMOTE_CLI_CONFIG = customConfigDir;
+
+      (fs.access as any) = vi.fn().mockRejectedValue(new Error('ENOENT'));
+      (fs.mkdir as any) = vi.fn().mockResolvedValue(undefined);
+      (fs.readFile as any) = vi.fn().mockRejectedValue(new Error('ENOENT'));
+      (fs.writeFile as any) = vi.fn().mockResolvedValue(undefined);
+
+      configManager = await ConfigManager.initialize();
+
+      expect(fs.mkdir).toHaveBeenCalledWith(customConfigDir, { recursive: true });
+      expect(configManager.getConfigDir()).toBe(customConfigDir);
+      expect(configManager.getConfigFile()).toBe(customConfigFile);
+    });
+
+    it('should resolve relative path in REMOTE_CLI_CONFIG to absolute path', async () => {
+      const relativePath = './custom-config';
+      const expectedAbsolutePath = path.resolve(relativePath);
+      process.env.REMOTE_CLI_CONFIG = relativePath;
+
+      (fs.access as any) = vi.fn().mockRejectedValue(new Error('ENOENT'));
+      (fs.mkdir as any) = vi.fn().mockResolvedValue(undefined);
+      (fs.readFile as any) = vi.fn().mockRejectedValue(new Error('ENOENT'));
+      (fs.writeFile as any) = vi.fn().mockResolvedValue(undefined);
+
+      configManager = await ConfigManager.initialize();
+
+      expect(configManager.getConfigDir()).toBe(expectedAbsolutePath);
     });
 
     it('should create default config file if not exists', async () => {
